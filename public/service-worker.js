@@ -2,7 +2,7 @@
 // Minimal offline-first caching. Adjust CACHE_NAME on every deploy
 // so old caches get cleared and patients pull the latest version.
 
-const CACHE_NAME = "ah-patient-app-v1";
+const CACHE_NAME = "ah-patient-app-v2";
 const APP_SHELL = [
   "/",
   "/index.html",
@@ -29,15 +29,18 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Network-first for API/data calls, cache-first for static app shell.
+// Network-first for page loads and API/data calls (so auth redirects and
+// fresh deploys always get current code), cache-first for static assets
+// (icons, manifest) since those rarely change.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
   const isApiCall = url.pathname.startsWith("/api/");
+  const isNavigation = request.mode === "navigate" || request.destination === "document";
 
-  if (isApiCall) {
+  if (isApiCall || isNavigation) {
     event.respondWith(
       fetch(request).catch(() => caches.match(request))
     );
