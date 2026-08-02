@@ -131,11 +131,192 @@ const DEFAULT_DOCUMENTS = [
   { id: 3, title: "Invoice #AHG-2025-0142", category: "Invoices", date: "12 Jan 2025", url: "" },
 ];
 
+/* ---------------------------------------------------------
+   QUESTIONNAIRE DATA -- unified schema.
+   Each question is { text, type: 'choice'|'scale'|'text', ...}
+   - choice: options: [{label, value}]
+   - scale: min, max, leftLabel, rightLabel (rendered as 0-10 picker)
+   - text: free response, not scored
+   Each questionnaire provides computeResult(values, questions) ->
+   { score, maxScore, pct, band, bandDetail, extra }
+--------------------------------------------------------- */
+const mkChoice = (text, options) => ({ text, type: "choice", options });
+const mkScale = (text, leftLabel, rightLabel) => ({ text, type: "scale", min: 0, max: 10, leftLabel, rightLabel });
+const mkText = (text) => ({ text, type: "text" });
+
+function sumChoiceScale(values, questions) {
+  return questions.reduce((sum, q, i) => (q.type === "text" ? sum : sum + (values[i] || 0)), 0);
+}
+
+/* ----- HHIE-S ----- */
+const HHIE_OPTIONS = [{ label: "No", value: 0 }, { label: "Sometimes", value: 2 }, { label: "Yes", value: 4 }];
+const HHIE_QUESTIONS = [
+  "Does a hearing problem cause you to feel embarrassed when you meet new people?",
+  "Does a hearing problem cause you to feel frustrated when talking to members of your family?",
+  "Do you have difficulty hearing/understanding co-workers, clients, customers?",
+  "Do you feel handicapped by a hearing problem?",
+  "Does a hearing problem cause you difficulty when visiting friends, relatives, neighbours?",
+  "Does a hearing problem cause you difficulty in the movies or in the theatre?",
+  "Does a hearing problem cause you to have arguments with family members?",
+  "Does a hearing problem cause you difficulty when listening to TV or radio?",
+  "Do you feel that any difficulty with your hearing limits or hampers your personal or social life?",
+  "Does a hearing problem cause you difficulty when in a restaurant with relatives or friends?",
+].map((t) => mkChoice(t, HHIE_OPTIONS));
+
+function hhieResult(values, questions) {
+  const score = sumChoiceScale(values, questions);
+  if (score <= 8) return { score, maxScore: 40, band: "No handicap", bandDetail: "13% probability of hearing impairment" };
+  if (score <= 24) return { score, maxScore: 40, band: "Mild-moderate handicap", bandDetail: "50% probability of hearing impairment" };
+  return { score, maxScore: 40, band: "Severe handicap", bandDetail: "84% probability of hearing impairment" };
+}
+
+/* ----- THI (Tinnitus Handicap Inventory) ----- */
+const THI_OPTIONS = [{ label: "Yes", value: 4 }, { label: "Sometimes", value: 2 }, { label: "No", value: 0 }];
+const THI_QUESTIONS = [
+  "Because of your tinnitus, is it difficult for you to concentrate?",
+  "Does the loudness of your tinnitus make it difficult for you to hear people?",
+  "Does your tinnitus make you angry?",
+  "Does your tinnitus make you feel confused?",
+  "Because of your tinnitus, do you feel desperate?",
+  "Do you complain a great deal about your tinnitus?",
+  "Because of your tinnitus, do you have trouble falling to sleep at night?",
+  "Do you feel as though you cannot escape your tinnitus?",
+  "Does your tinnitus interfere with your ability to enjoy your social activities (such as going out to dinner, to the movies)?",
+  "Because of your tinnitus, do you feel frustrated?",
+  "Because of your tinnitus, do you feel that you have a terrible disease?",
+  "Does your tinnitus make it difficult for you to enjoy life?",
+  "Does your tinnitus interfere with your job or household responsibilities?",
+  "Because of your tinnitus, do you find that you are often irritable?",
+  "Because of your tinnitus, is it difficult for you to read?",
+  "Does your tinnitus make you upset?",
+  "Do you feel that your tinnitus problem has placed stress on your relationships with members of your family and friends?",
+  "Do you find it difficult to focus your attention away from your tinnitus and on other things?",
+  "Do you feel that you have no control over your tinnitus?",
+  "Because of your tinnitus, do you often feel tired?",
+  "Because of your tinnitus, do you feel depressed?",
+  "Does your tinnitus make you feel anxious?",
+  "Do you feel that you can no longer cope with your tinnitus?",
+  "Does your tinnitus get worse when you are under stress?",
+  "Does your tinnitus make you feel insecure?",
+].map((t) => mkChoice(t, THI_OPTIONS));
+
+function thiResult(values, questions) {
+  const score = sumChoiceScale(values, questions);
+  let band, bandDetail;
+  if (score <= 16) { band = "Slight or no handicap"; bandDetail = "Minimal impact from tinnitus"; }
+  else if (score <= 36) { band = "Mild handicap"; bandDetail = "Some impact from tinnitus"; }
+  else if (score <= 56) { band = "Moderate handicap"; bandDetail = "Noticeable impact from tinnitus"; }
+  else if (score <= 76) { band = "Severe handicap"; bandDetail = "Significant impact from tinnitus"; }
+  else { band = "Catastrophic handicap"; bandDetail = "Very severe impact from tinnitus"; }
+  return { score, maxScore: 100, band, bandDetail };
+}
+
+/* ----- IOI-HA ----- */
+const IOI_QUESTIONS = [
+  mkChoice("Think about how much you used your present hearing aid(s) over the past two weeks. On an average day, how many hours did you use the hearing aid(s)?",
+    [{ label: "None", value: 1 }, { label: "Less than 1 hour a day", value: 2 }, { label: "1 to 4 hours a day", value: 3 }, { label: "4 to 8 hours a day", value: 4 }, { label: "More than 8 hours a day", value: 5 }]),
+  mkChoice("Think about the situation where you most wanted to hear better, before you got your present hearing aid(s). Over the past two weeks, how much has the hearing aid helped in those situations?",
+    [{ label: "Helped not at all", value: 1 }, { label: "Helped slightly", value: 2 }, { label: "Helped moderately", value: 3 }, { label: "Helped quite a lot", value: 4 }, { label: "Helped very much", value: 5 }]),
+  mkChoice("Think again about the situation where you most wanted to hear better. When you use your present hearing aid(s), how much difficulty do you STILL have in that situation?",
+    [{ label: "Very much difficulty", value: 1 }, { label: "Quite a lot of difficulty", value: 2 }, { label: "Moderate difficulty", value: 3 }, { label: "Slight difficulty", value: 4 }, { label: "No difficulty", value: 5 }]),
+  mkChoice("Considering everything, do you think your present hearing aid(s) is worth the trouble?",
+    [{ label: "Not at all worth it", value: 1 }, { label: "Slightly worth it", value: 2 }, { label: "Moderately worth it", value: 3 }, { label: "Quite a lot worth it", value: 4 }, { label: "Very much worth it", value: 5 }]),
+  mkChoice("Over the past two weeks, with your present hearing aid(s), how much have your hearing difficulties affected the things you can do?",
+    [{ label: "Affected very much", value: 1 }, { label: "Affected quite a lot", value: 2 }, { label: "Affected moderately", value: 3 }, { label: "Affected slightly", value: 4 }, { label: "Affected not at all", value: 5 }]),
+  mkChoice("Over the past two weeks, with your present hearing aid(s), how much do you think other people were bothered by your hearing difficulties?",
+    [{ label: "Bothered very much", value: 1 }, { label: "Bothered quite a lot", value: 2 }, { label: "Bothered moderately", value: 3 }, { label: "Bothered slightly", value: 4 }, { label: "Bothered not at all", value: 5 }]),
+  mkChoice("Considering everything, how much has your present hearing aid(s) changed your enjoyment of life?",
+    [{ label: "Worse", value: 1 }, { label: "No change", value: 2 }, { label: "Slightly better", value: 3 }, { label: "Quite a lot better", value: 4 }, { label: "Very much better", value: 5 }]),
+  mkChoice("How much hearing difficulty do you have when you are not wearing a hearing aid?",
+    [{ label: "Severe", value: 1 }, { label: "Moderately severe", value: 2 }, { label: "Moderate", value: 3 }, { label: "Mild", value: 4 }, { label: "None", value: 5 }]),
+];
+
+function ioihaResult(values, questions) {
+  const score = sumChoiceScale(values, questions);
+  return { score, maxScore: 40, band: score >= 28 ? "Positive outcomes" : "Mixed / limited outcomes", bandDetail: score + " of 40 -- higher scores reflect more benefit, use, and satisfaction" };
+}
+
+/* ----- TFI (Tinnitus Functional Index) ----- */
+const TFI_ITEMS = [
+  ["What percentage of your time awake were you consciously AWARE OF your tinnitus?", "Never aware", "Always aware"],
+  ["How STRONG or LOUD was your tinnitus?", "Not at all strong or loud", "Extremely strong or loud"],
+  ["What percentage of your time awake were you ANNOYED by your tinnitus?", "None of the time", "All of the time"],
+  ["Did you feel IN CONTROL in regard to your tinnitus?", "Very much in control", "Never in control"],
+  ["How easy was it for you to COPE with your tinnitus?", "Very easy to cope", "Impossible to cope"],
+  ["How easy was it for you to IGNORE your tinnitus?", "Very easy to ignore", "Impossible to ignore"],
+  ["Your ability to CONCENTRATE?", "Did not interfere", "Completely interfered"],
+  ["Your ability to THINK CLEARLY?", "Did not interfere", "Completely interfered"],
+  ["Your ability to FOCUS ATTENTION on other things besides your tinnitus?", "Did not interfere", "Completely interfered"],
+  ["How often did your tinnitus make it difficult to FALL ASLEEP?", "Never had difficulty", "Always had difficulty"],
+  ["How often did your tinnitus cause you difficulty in getting AS MUCH SLEEP as you needed?", "Never had difficulty", "Always had difficulty"],
+  ["How much of the time did your tinnitus keep you from SLEEPING as DEEPLY or as PEACEFULLY as you would have liked?", "None of the time", "All of the time"],
+  ["Your ability to HEAR CLEARLY?", "Did not interfere", "Completely interfered"],
+  ["Your ability to UNDERSTAND PEOPLE who are talking?", "Did not interfere", "Completely interfered"],
+  ["Your ability to FOLLOW CONVERSATIONS in a group or at meetings?", "Did not interfere", "Completely interfered"],
+  ["Your QUIET RESTING ACTIVITIES?", "Did not interfere", "Completely interfered"],
+  ["Your ability to RELAX?", "Did not interfere", "Completely interfered"],
+  ["Your ability to enjoy PEACE AND QUIET?", "Did not interfere", "Completely interfered"],
+  ["Your enjoyment of SOCIAL ACTIVITIES?", "Did not interfere", "Completely interfered"],
+  ["Your ENJOYMENT OF LIFE?", "Did not interfere", "Completely interfered"],
+  ["Your RELATIONSHIPS with family, friends and other people?", "Did not interfere", "Completely interfered"],
+  ["How often did your tinnitus cause you to have difficulty performing your WORK OR OTHER TASKS, such as home maintenance, school work, or caring for children or others?", "Never had difficulty", "Always had difficulty"],
+  ["How ANXIOUS or WORRIED has your tinnitus made you feel?", "Not at all anxious or worried", "Extremely anxious or worried"],
+  ["How BOTHERED or UPSET have you been because of your tinnitus?", "Not at all bothered or upset", "Extremely bothered or upset"],
+  ["How DEPRESSED were you because of your tinnitus?", "Not at all depressed", "Extremely depressed"],
+];
+const TFI_QUESTIONS = TFI_ITEMS.map(([t, l, r]) => mkScale(t, l, r));
+
+function tfiResult(values, questions) {
+  const answered = questions.map((_, i) => values[i]).filter((v) => v !== undefined);
+  const meanScore = answered.length ? answered.reduce((a, b) => a + b, 0) / answered.length : 0;
+  const score = Math.round(meanScore * 10);
+  let band;
+  if (score <= 17) band = "Not a problem";
+  else if (score <= 31) band = "Small problem";
+  else if (score <= 53) band = "Moderate problem";
+  else if (score <= 72) band = "Big problem";
+  else band = "Very big problem";
+  return { score, maxScore: 100, band, bandDetail: score + " of 100" };
+}
+
+/* ----- THS (Tinnitus and Hearing Survey) -- deliberately NOT graded
+   with cutoffs, per the instrument's own guidance: it's a triage tool
+   to separate tinnitus vs. hearing complaints for clinical discussion,
+   not a severity score. ----- */
+const THS_OPTIONS = [
+  { label: "No, not a problem", value: 0 }, { label: "Yes, a small problem", value: 1 }, { label: "Yes, a moderate problem", value: 2 },
+  { label: "Yes, a big problem", value: 3 }, { label: "Yes, a very big problem", value: 4 },
+];
+const THS_QUESTIONS = [
+  mkChoice("Over the last week, tinnitus kept me from sleeping.", THS_OPTIONS),
+  mkChoice("Over the last week, tinnitus kept me from concentrating on reading.", THS_OPTIONS),
+  mkChoice("Over the last week, tinnitus kept me from relaxing.", THS_OPTIONS),
+  mkChoice("Over the last week, I couldn't get my mind off of my tinnitus.", THS_OPTIONS),
+  mkChoice("Over the last week, I couldn't understand what others were saying in noisy or crowded places.", THS_OPTIONS),
+  mkChoice("Over the last week, I couldn't understand what people were saying on TV or in movies.", THS_OPTIONS),
+  mkChoice("Over the last week, I couldn't understand people with soft voices.", THS_OPTIONS),
+  mkChoice("Over the last week, I couldn't understand what was being said in group conversations.", THS_OPTIONS),
+  mkChoice("Over the last week, sounds were too loud or uncomfortable for me when they seemed normal to others around me.", THS_OPTIONS),
+  mkText("If you answered anything other than 'No, not a problem' above: please list two examples of sounds that are too loud or uncomfortable for you, but seem normal to others."),
+];
+
+function thsResult(values, questions) {
+  const tinnitusSum = [0, 1, 2, 3].reduce((s, i) => s + (values[i] || 0), 0);
+  const hearingSum = [4, 5, 6, 7].reduce((s, i) => s + (values[i] || 0), 0);
+  const soundTolerance = values[8] || 0;
+  return {
+    score: tinnitusSum + hearingSum, maxScore: 32,
+    band: "For clinical discussion", bandDetail: "Tinnitus " + tinnitusSum + "/16 . Hearing " + hearingSum + "/16 . Sound tolerance " + soundTolerance + "/4",
+  };
+}
+
 const QUESTIONNAIRES = [
-  { id: "thi", name: "Tinnitus Handicap Inventory", short: "THI", items: 8, desc: "Measures how tinnitus affects your daily life." },
-  { id: "hhie", name: "Hearing Handicap Inventory", short: "HHIE-S", items: 10, desc: "Screens the emotional & social impact of hearing loss." },
-  { id: "cosi", name: "Client Oriented Scale of Improvement", short: "COSI", items: 5, desc: "Tracks your personal listening goals over time." },
-  { id: "iotn", name: "Device Satisfaction Check-in", short: "SADL", items: 6, desc: "Quick check on how satisfied you are with your devices." },
+  { id: "hhie", name: "Hearing Screening Questionnaire", short: "HHIE-S", category: "hearing", desc: "Screens the emotional & social impact of hearing loss.", questions: HHIE_QUESTIONS, computeResult: hhieResult },
+  { id: "ioiha", name: "International Outcome Inventory for Hearing Aids", short: "IOI-HA", category: "hearing", desc: "Tracks real-world benefit and satisfaction with your hearing aids.", questions: IOI_QUESTIONS, computeResult: ioihaResult },
+  { id: "sadl", name: "Satisfaction with Amplification in Daily Life", short: "SADL", category: "hearing", desc: "Coming soon.", comingSoon: true },
+  { id: "thi", name: "Tinnitus Handicap Inventory", short: "THI", category: "tinnitus", desc: "Measures how tinnitus affects your daily life.", questions: THI_QUESTIONS, computeResult: thiResult },
+  { id: "ths", name: "Tinnitus and Hearing Survey", short: "THS", category: "tinnitus", desc: "Helps separate tinnitus problems from hearing problems.", questions: THS_QUESTIONS, computeResult: thsResult },
+  { id: "tfi", name: "Tinnitus Functional Index", short: "TFI", category: "tinnitus", desc: "Detailed look at how tinnitus affects different areas of life.", questions: TFI_QUESTIONS, computeResult: tfiResult },
 ];
 
 const GUIDES = [
@@ -171,17 +352,48 @@ const LACE_PRODUCT = {
   ],
 };
 
+// Prices are GST-inclusive, per the official AHG price list (effective Feb 2026).
 const PRODUCTS = [
-  { id: "domes", name: "Open Domes (Pack of 8)", category: "Cleaning & Care", price: 18, desc: "Replacement domes for your Phonak Paradise, mixed sizes.", compatible: "Fits your devices" },
-  { id: "wax", name: "Wax Guard Filters (6-pack)", category: "Cleaning & Care", price: 15, desc: "cerumen filters, recommended every 4-6 weeks.", compatible: "Fits your devices" },
-  { id: "wipes", name: "Dry Cleaning Wipes (30ct)", category: "Cleaning & Care", price: 12, desc: "Alcohol-free wipes safe for daily use on devices and domes." },
-  { id: "dehum", name: "Electronic Dry & Store", category: "Cleaning & Care", price: 89, desc: "Overnight UV drying box, extends device lifespan in humid climates." },
-  { id: "charger", name: "Spare Charging Case", category: "Batteries & Power", price: 65, desc: "Backup charger for travel or your bedside table.", compatible: "Fits your devices" },
-  { id: "battery", name: "Size 312 Batteries (60ct)", category: "Batteries & Power", price: 22, desc: "For non-rechargeable models and backup use." },
-  { id: "clip", name: "Retention Clips", category: "Accessories", price: 9, desc: "Keeps devices secure during exercise or active days." },
-  { id: "case", name: "Hard Travel Case", category: "Accessories", price: 28, desc: "Protective case for both devices and accessories." },
-  { id: "tv", name: "TV Connector Streamer", category: "Accessories", price: 179, desc: "Stream TV audio directly to both hearing aids.", compatible: "Fits your devices" },
-  { id: "remote", name: "Remote Control", category: "Accessories", price: 55, desc: "Simple button remote for volume and program changes." },
+  { id: "impl-battery", name: "Cochlear Battery (1 box/60pcs)", category: "Implant Battery", price: 100.00 },
+  { id: "ha-battery-6", name: "Hearing Aid Battery (6pcs)", category: "Battery", price: 9.00 },
+  { id: "ha-battery-60", name: "Hearing Aid Battery (1 box/60pcs)", category: "Battery", price: 60.00 },
+  { id: "chg-custom", name: "Custom Charger", category: "Charger", price: 272.50 },
+  { id: "chg-premium", name: "Premium Charger", category: "Charger", price: 272.50 },
+  { id: "chg-standard", name: "Standard Charger", category: "Charger", price: 218.00 },
+  { id: "chg-desktop", name: "Desktop Charger", category: "Charger", price: 218.00 },
+  { id: "res-multimic-nexia", name: "Multi-Mic+ (Nexia)", category: "ReSound", price: 545.00 },
+  { id: "res-tvstreamer-nexia", name: "TV Streamer+ (Nexia)", category: "ReSound", price: 545.00 },
+  { id: "res-multimic", name: "Multi-Mic", category: "ReSound", price: 599.50 },
+  { id: "res-tvstreamer2", name: "TV Streamer 2", category: "ReSound", price: 218.00 },
+  { id: "res-phoneclip", name: "Phone Clip+", category: "ReSound", price: 272.50 },
+  { id: "res-remote2", name: "Remote Control 2", category: "ReSound", price: 135.00 },
+  { id: "pho-tvconnector", name: "TV Connector", category: "Phonak", price: 230.00 },
+  { id: "pho-partnermic", name: "Partner Mic", category: "Phonak", price: 460.00 },
+  { id: "pho-remote", name: "Remote Control", category: "Phonak", price: 230.00 },
+  { id: "sig-tvsound", name: "TV Sound", category: "Signia", price: 272.50 },
+  { id: "sig-streamlinetv", name: "Streamline TV", category: "Signia", price: 272.50 },
+  { id: "sig-streamlinemic", name: "Streamline Mic", category: "Signia", price: 272.50 },
+  { id: "sig-minipocket", name: "MiniPocket", category: "Signia", price: 272.50 },
+  { id: "oti-connectclip", name: "ConnectClip", category: "Oticon", price: 599.50 },
+  { id: "oti-edumic", name: "EduMic", category: "Oticon", price: 599.50 },
+  { id: "oti-remote3", name: "Remote Control 3.0", category: "Oticon", price: 135.00 },
+  { id: "oti-phoneadaptor", name: "Phone Adaptor", category: "Oticon", price: 272.50 },
+  { id: "oti-tvadaptor3", name: "TV Adaptor 3.0", category: "Oticon", price: 272.50 },
+  { id: "earplug-serenity", name: "Serenity Choice Plus", category: "Custom Earplug", price: 230.00 },
+  { id: "clean-perfectdry", name: "PerfectDry Lux", category: "Cleaning", price: 272.50 },
+  { id: "clean-capsules", name: "Drying Capsules (1 box/4pcs)", category: "Cleaning", price: 16.50 },
+  { id: "clean-cup", name: "Drying Cup", category: "Cleaning", price: 12.00 },
+  { id: "con-receiver", name: "Receiver", category: "Consumables", price: 210.00 },
+  { id: "con-receiver-up", name: "Encased with UP receiver", category: "Consumables", price: 381.50 },
+  { id: "con-domes", name: "Domes (2 pcs)", category: "Consumables", price: 12.00 },
+  { id: "con-earmould", name: "Earmould", category: "Consumables", price: 163.50 },
+  { id: "con-metalhook", name: "Metal Earhook", category: "Consumables", price: 54.50 },
+  { id: "con-plastichook", name: "Plastic Earhook", category: "Consumables", price: 12.00 },
+  { id: "con-tubing", name: "Tubing", category: "Consumables", price: 16.50 },
+  { id: "con-waxguard", name: "Wax Guard", category: "Consumables", price: 16.50 },
+  { id: "con-clipngo", name: "Clip n Go", category: "Consumables", price: 25.00 },
+  { id: "con-audioshoe", name: "DAI Audioshoe", category: "Consumables", price: 54.50 },
+  { id: "con-earimpression", name: "Ear Impression", category: "Consumables", price: 54.50 },
 ];
 
 const SAVED_CARDS = [
@@ -354,26 +566,31 @@ function useQuestionnaireStore(patientId) {
 }
 
 function QuestionnaireRunner({ q, onClose, onSave }) {
-  const questions = Array.from({ length: q.items }, (_, i) => "Item " + (i + 1) + " of " + q.short);
+  const questions = q.questions;
   const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const options = ["Not at all", "Sometimes", "Often", "Almost always"];
+  const [values, setValues] = useState({});
+  const [textDraft, setTextDraft] = useState("");
+  const current = questions[idx];
 
-  const pick = (val) => {
-    const next = { ...answers, [idx]: val };
-    setAnswers(next);
+  const finish = (next) => {
+    const result = q.computeResult(next, questions);
+    onSave({ ...result, completedAt: new Date().toISOString().slice(0, 10), answers: next });
+  };
+
+  const advance = (val) => {
+    const next = { ...values, [idx]: val };
+    setValues(next);
+    setTextDraft("");
     if (idx < questions.length - 1) {
-      setTimeout(() => setIdx(idx + 1), 150);
+      setTimeout(() => setIdx(idx + 1), current.type === "text" ? 0 : 150);
     } else {
-      const score = Object.values(next).reduce((a, b) => a + b, 0);
-      const pct = Math.round((score / (questions.length * 3)) * 100);
-      onSave({ score, pct, completedAt: new Date().toISOString().slice(0, 10), answers: next });
+      finish(next);
     }
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#FFFFFF", width: "100%", maxWidth: 390, borderRadius: "24px 24px 0 0", padding: 24, animation: "slideUp 0.25s ease-out" }}>
+      <div style={{ background: "#FFFFFF", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24, animation: "slideUp 0.25s ease-out" }}>
         <style>{"@keyframes slideUp{from{transform:translateY(24px);opacity:0}to{transform:translateY(0);opacity:1}}"}</style>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>{q.short + " . " + (idx + 1) + " / " + questions.length}</SectionLabel>
@@ -382,20 +599,58 @@ function QuestionnaireRunner({ q, onClose, onSave }) {
         <div style={{ height: 4, background: "#E7ECF3", borderRadius: 2, marginBottom: 22 }}>
           <div style={{ height: 4, width: (idx / questions.length) * 100 + "%", background: "#E8631E", borderRadius: 2, transition: "width 0.3s" }} />
         </div>
-        <h3 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 21, color: "#1B2430", marginBottom: 24 }}>
-          Over the past week, how much has this bothered you?
+        <h3 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 18, color: "#1B2430", marginBottom: 24, lineHeight: 1.4 }}>
+          {current.text}
         </h3>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {options.map((opt, i) => (
-            <button key={opt} onClick={() => pick(i)} style={{
-              textAlign: "left", padding: "14px 16px", borderRadius: 12, border: "1px solid #E3E7EE",
-              background: "#F4F5F8", fontFamily: "'Inter', sans-serif", fontSize: 15, color: "#1B2430",
-              cursor: "pointer",
+
+        {current.type === "choice" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {current.options.map((opt) => (
+              <button key={opt.label} onClick={() => advance(opt.value)} style={{
+                textAlign: "left", padding: "14px 16px", borderRadius: 12, border: "1px solid #E3E7EE",
+                background: "#F4F5F8", fontFamily: "'Inter', sans-serif", fontSize: 14.5, color: "#1B2430",
+                cursor: "pointer",
+              }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {current.type === "scale" && (
+          <div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12, justifyContent: "center" }}>
+              {Array.from({ length: current.max - current.min + 1 }, (_, i) => current.min + i).map((n) => (
+                <button key={n} onClick={() => advance(n)} style={{
+                  width: 32, height: 32, borderRadius: 8, border: "1px solid #E3E7EE", background: "#F4F5F8",
+                  fontFamily: "'IBM Plex Mono', monospace", fontWeight: 600, fontSize: 13, color: "#1B2430", cursor: "pointer",
+                }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", padding: "0 2px" }}>
+              <span style={{ maxWidth: "45%" }}>{current.leftLabel}</span>
+              <span style={{ maxWidth: "45%", textAlign: "right" }}>{current.rightLabel}</span>
+            </div>
+          </div>
+        )}
+
+        {current.type === "text" && (
+          <div>
+            <textarea
+              value={textDraft} onChange={(e) => setTextDraft(e.target.value)} rows={4}
+              placeholder="Type your answer here (optional)..."
+              style={{ ...inputStyle, resize: "none", fontFamily: "'Inter', sans-serif", marginBottom: 12 }}
+            />
+            <button onClick={() => advance(textDraft)} style={{
+              width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
+              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
             }}>
-              {opt}
+              {idx < questions.length - 1 ? "Next" : "Finish"}
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -590,7 +845,109 @@ function ResultsTab({ audiogramHistory, sin }) {
 /* ---------------------------------------------------------
    TABS: DEVICE (+ simplified Datalogging)
 --------------------------------------------------------- */
-function DeviceTab({ devices, datalog }) {
+const SERVICE_PROBLEMS = [
+  "No sound / not working",
+  "Whistling or feedback",
+  "Battery or charging issue",
+  "Physical damage",
+  "Uncomfortable fit",
+  "Connectivity / Bluetooth issue",
+  "Other",
+];
+
+function ServiceRequestModal({ devices, profile, onClose }) {
+  const [deviceIdx, setDeviceIdx] = useState(devices.length === 1 ? 0 : null);
+  const [problem, setProblem] = useState(null);
+  const [note, setNote] = useState("");
+
+  const canSend = deviceIdx !== null && problem;
+  const device = deviceIdx !== null ? devices[deviceIdx] : null;
+
+  const waLink = () => {
+    const lines = [
+      "Service/Repair Request",
+      "Patient: " + profile.firstName + " " + profile.lastName + " (" + profile.id + ")",
+      device ? "Device: " + device.ear + " ear -- " + device.model + " (Serial: " + device.serial + ")" : "",
+      "Issue: " + problem,
+      note ? "Note: " + note : "",
+    ].filter(Boolean).join("\n");
+    return "https://wa.me/" + profile.clinicPhone.replace(/[^\d]/g, "") + "?text=" + encodeURIComponent(lines);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <SectionLabel>Service & Repair</SectionLabel>
+          <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
+        </div>
+
+        {devices.length > 1 && (
+          <>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430", marginBottom: 8 }}>Which device?</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+              {devices.map((d, i) => (
+                <button key={i} onClick={() => setDeviceIdx(i)} style={{
+                  flex: 1, padding: "12px 8px", borderRadius: 12, border: deviceIdx === i ? "2px solid #1E3A6D" : "1px solid #E3E7EE",
+                  background: deviceIdx === i ? "#E7ECF3" : "#fff", cursor: "pointer", textAlign: "left",
+                }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: "#1B2430" }}>{d.ear + " ear"}</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", marginTop: 2 }}>{d.model}</div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430", marginBottom: 8 }}>What's the problem?</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+          {SERVICE_PROBLEMS.map((p) => (
+            <div key={p} onClick={() => setProblem(p)} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderRadius: 12,
+              border: problem === p ? "2px solid #1E3A6D" : "1px solid #E3E7EE", cursor: "pointer",
+            }}>
+              <div style={{
+                width: 16, height: 16, borderRadius: "50%", border: "2px solid " + (problem === p ? "#1E3A6D" : "#C7CDD8"),
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                {problem === p && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#1E3A6D" }} />}
+              </div>
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>{p}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430", marginBottom: 8 }}>Anything else? (optional)</div>
+        <textarea
+          value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add any extra detail..."
+          rows={3} style={{ ...inputStyle, marginBottom: 18, resize: "none", fontFamily: "'Inter', sans-serif" }}
+        />
+
+        {canSend ? (
+          <a href={waLink()} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              width: "100%", padding: "14px 0", borderRadius: 14, background: "#25D366",
+              fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: "#fff",
+            }}>
+              <MessageCircle size={16} /> Send via WhatsApp
+            </div>
+          </a>
+        ) : (
+          <div style={{
+            width: "100%", padding: "14px 0", borderRadius: 14, background: "#E7ECF3", textAlign: "center",
+            fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#8A96A3",
+          }}>
+            {deviceIdx === null ? "Select a device to continue" : "Select the issue to continue"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeviceTab({ devices, datalog, profile }) {
+  const [serviceOpen, setServiceOpen] = useState(false);
   const pct = Math.min(100, (datalog.avgWear / TARGET_WEAR_HOURS) * 100);
   const onTarget = datalog.avgWear >= TARGET_WEAR_HOURS;
   return (
@@ -644,11 +1001,13 @@ function DeviceTab({ devices, datalog }) {
           </div>
         </Card>
       ))}
-      <Card style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <Card onClick={() => setServiceOpen(true)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Wrench size={18} color="#1E3A6D" />
         <div style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>Request a service or repair</div>
         <ChevronRight size={16} color="#8A96A3" />
       </Card>
+
+      {serviceOpen && <ServiceRequestModal devices={devices} profile={profile} onClose={() => setServiceOpen(false)} />}
     </div>
   );
 }
@@ -657,127 +1016,84 @@ function DeviceTab({ devices, datalog }) {
    LACE AI PRO -- detail + checkout
 --------------------------------------------------------- */
 function LaceModal({ onClose }) {
-  const [step, setStep] = useState("detail"); // detail | checkout | done
-  const [selectedCard, setSelectedCard] = useState(SAVED_CARDS[0].id);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const gst = LACE_PRODUCT.price * GST_RATE;
   const total = (LACE_PRODUCT.price + gst).toFixed(2);
+
+  const startCheckout = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "lace", origin: window.location.origin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Checkout failed");
+      window.location.href = data.url;
+    } catch (e) {
+      setError(e.message || "Couldn't start checkout -- please try again.");
+      setBusy(false);
+    }
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
       <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <SectionLabel>{step === "checkout" ? "Checkout" : step === "done" ? "Order confirmed" : "Auditory Training"}</SectionLabel>
+          <SectionLabel>Auditory Training</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
         </div>
 
-        {step === "detail" && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-              <div style={{ width: 46, height: 46, borderRadius: 12, background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Cpu size={22} color="#fff" />
-              </div>
-              <div>
-                <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430" }}>{LACE_PRODUCT.name}</div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>{LACE_PRODUCT.tagline}</div>
-              </div>
-            </div>
-
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8A96A3", marginBottom: 8, marginTop: 16 }}>HOW IT WORKS</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-              {LACE_PRODUCT.how.map((line, i) => (
-                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#E8631E", marginTop: 6, flexShrink: 0 }} />
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.5 }}>{line}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8A96A3", marginBottom: 8 }}>WHAT'S INCLUDED</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
-              {LACE_PRODUCT.benefits.map((b, i) => (
-                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <Check size={14} color="#4C6349" />
-                  <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>{b}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, paddingTop: 14, borderTop: "1px solid #F0EFEA" }}>
-              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>{"S$" + LACE_PRODUCT.price + " + 9% GST"}</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 18, fontWeight: 700, color: "#1E3A6D" }}>{"S$" + total}</span>
-            </div>
-
-            <button onClick={() => setStep("checkout")} style={{
-              width: "100%", padding: "14px 0", borderRadius: 14, background: "#E8631E", color: "#fff",
-              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
-            }}>
-              {"Buy Now -- S$" + total}
-            </button>
-          </>
-        )}
-
-        {step === "checkout" && (
-          <>
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Inter', sans-serif", fontSize: 13, marginBottom: 6 }}>
-              <span style={{ color: "#1B2430" }}>{LACE_PRODUCT.name}</span>
-              <span style={{ color: "#64707E", fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + LACE_PRODUCT.price.toFixed(2)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", marginBottom: 10 }}>
-              <span>GST (9%)</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + gst.toFixed(2)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F0EFEA", paddingTop: 10, marginBottom: 18, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14 }}>
-              <span>Total</span>
-              <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + total}</span>
-            </div>
-
-            <SectionLabel>Payment method</SectionLabel>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-              {SAVED_CARDS.map((c) => (
-                <div key={c.id} onClick={() => setSelectedCard(c.id)} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: 12, borderRadius: 12,
-                  border: selectedCard === c.id ? "2px solid #1E3A6D" : "1px solid #E3E7EE", cursor: "pointer",
-                }}>
-                  <CreditCard size={18} color="#1E3A6D" />
-                  <div style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>
-                    {c.brand + " \u2022\u2022\u2022\u2022 " + c.last4}
-                    <span style={{ color: "#8A96A3", marginLeft: 8, fontSize: 11.5 }}>{"exp " + c.expiry}</span>
-                  </div>
-                  {selectedCard === c.id && <Check size={16} color="#1E3A6D" />}
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>
-              <ShieldCheck size={13} /> Processed by Stripe -- your card details are never stored in this app
-            </div>
-
-            <button onClick={() => setStep("done")} style={{
-              width: "100%", padding: "14px 0", borderRadius: 14, background: "#E8631E", color: "#fff",
-              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
-            }}>
-              {"Pay S$" + total}
-            </button>
-          </>
-        )}
-
-        {step === "done" && (
-          <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#E3EBE2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-              <Check size={26} color="#4C6349" />
-            </div>
-            <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 500, color: "#1B2430", margin: "0 0 8px" }}>You're all set</h3>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.5, margin: "0 0 20px" }}>
-              LACE AI Pro is unlocked on your profile. Download the <strong>LACE AI</strong> app from the App Store or Google Play and sign in with your Amazing Hearing account to start your first session.
-            </p>
-            <button onClick={onClose} style={{
-              width: "100%", padding: "12px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
-              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
-            }}>
-              Done
-            </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <div style={{ width: 46, height: 46, borderRadius: 12, background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Cpu size={22} color="#fff" />
           </div>
-        )}
+          <div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430" }}>{LACE_PRODUCT.name}</div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>{LACE_PRODUCT.tagline}</div>
+          </div>
+        </div>
+
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8A96A3", marginBottom: 8, marginTop: 16 }}>HOW IT WORKS</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          {LACE_PRODUCT.how.map((line, i) => (
+            <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#E8631E", marginTop: 6, flexShrink: 0 }} />
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.5 }}>{line}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, color: "#8A96A3", marginBottom: 8 }}>WHAT'S INCLUDED</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {LACE_PRODUCT.benefits.map((b, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Check size={14} color="#4C6349" />
+              <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>{b}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, paddingTop: 14, borderTop: "1px solid #F0EFEA" }}>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>{"S$" + LACE_PRODUCT.price + " + 9% GST"}</span>
+          <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 18, fontWeight: 700, color: "#1E3A6D" }}>{"S$" + total}</span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>
+          <ShieldCheck size={13} /> You'll pay securely on Stripe's own checkout page -- your card details never touch this app
+        </div>
+
+        {error && <div style={{ color: "#C4573F", fontSize: 12, fontFamily: "'Inter', sans-serif", marginBottom: 10, textAlign: "center" }}>{error}</div>}
+
+        <button onClick={startCheckout} disabled={busy} style={{
+          width: "100%", padding: "14px 0", borderRadius: 14, background: "#E8631E", color: "#fff",
+          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1,
+        }}>
+          {busy ? "Redirecting to checkout..." : "Buy Now -- S$" + total}
+        </button>
       </div>
     </div>
   );
@@ -871,12 +1187,13 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{p.name}</div>
-              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E", marginTop: 2, lineHeight: 1.5 }}>{p.desc}</div>
+              <div style={{ marginTop: 6 }}><Pill>{p.category}</Pill></div>
+              {p.desc && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E", marginTop: 6, lineHeight: 1.5 }}>{p.desc}</div>}
               {p.compatible && (
                 <div style={{ marginTop: 6 }}><Pill tone="success">{p.compatible}</Pill></div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 600, color: "#1B2430" }}>{"S$" + p.price}</span>
+                <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 600, color: "#1B2430" }}>{"S$" + p.price.toFixed(2)}</span>
                 {cart[p.id] ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: Math.max(0, prev[p.id] - 1) }))} style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
@@ -918,34 +1235,33 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
 }
 
 function CheckoutModal({ cart, setCart, profile, onClose }) {
-  const [selectedCard, setSelectedCard] = useState(SAVED_CARDS[0].id);
-  const [addingCard, setAddingCard] = useState(false);
-  const [placed, setPlaced] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   const items = Object.entries(cart).filter(([, qty]) => qty > 0).map(([id, qty]) => ({ ...PRODUCTS.find((p) => p.id === id), qty }));
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const total = items.reduce((sum, i) => sum + i.price * i.qty, 0).toFixed(2);
 
-  if (placed) {
-    return (
-      <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 20, padding: 32, maxWidth: 340, textAlign: "center" }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#E3EBE2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <Check size={26} color="#4C6349" />
-          </div>
-          <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 500, color: "#1B2430", margin: "0 0 8px" }}>Order placed</h3>
-          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.5, margin: "0 0 20px" }}>
-            {"Your order will be ready for collection at " + profile.clinic + ", or we'll courier it to your address on file."}
-          </p>
-          <button onClick={() => { setCart({}); onClose(); }} style={{
-            width: "100%", padding: "12px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
-            border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
-          }}>
-            Done
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const startCheckout = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "shop", cart, origin: window.location.origin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Checkout failed");
+      sessionStorage.setItem("ahg_pending_order", JSON.stringify({
+        items: data.orderSummary, total: data.total, clinic: profile.clinic,
+        patientName: profile.firstName + " " + profile.lastName, patientId: profile.id, clinicPhone: profile.clinicPhone,
+      }));
+      window.location.href = data.url;
+    } catch (e) {
+      setError(e.message || "Couldn't start checkout -- please try again.");
+      setBusy(false);
+    }
+  };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
@@ -959,61 +1275,27 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
           {items.map((i) => (
             <div key={i.id} style={{ display: "flex", justifyContent: "space-between", fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
               <span style={{ color: "#1B2430" }}>{i.qty + "x " + i.name}</span>
-              <span style={{ color: "#64707E", fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + (i.price * i.qty)}</span>
+              <span style={{ color: "#64707E", fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + (i.price * i.qty).toFixed(2)}</span>
             </div>
           ))}
           <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F0EFEA", paddingTop: 10, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14 }}>
             <span>Total</span>
-            <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + subtotal}</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + total}</span>
           </div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>Prices include GST</div>
         </div>
-
-        <SectionLabel>Payment method</SectionLabel>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
-          {SAVED_CARDS.map((c) => (
-            <div key={c.id} onClick={() => setSelectedCard(c.id)} style={{
-              display: "flex", alignItems: "center", gap: 12, padding: 12, borderRadius: 12,
-              border: selectedCard === c.id ? "2px solid #1E3A6D" : "1px solid #E3E7EE", cursor: "pointer",
-            }}>
-              <CreditCard size={18} color="#1E3A6D" />
-              <div style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>
-                {c.brand + " \u2022\u2022\u2022\u2022 " + c.last4}
-                <span style={{ color: "#8A96A3", marginLeft: 8, fontSize: 11.5 }}>{"exp " + c.expiry}</span>
-              </div>
-              {selectedCard === c.id && <Check size={16} color="#1E3A6D" />}
-            </div>
-          ))}
-          <div onClick={() => setAddingCard(!addingCard)} style={{
-            display: "flex", alignItems: "center", gap: 10, padding: 12, borderRadius: 12,
-            border: "1px dashed #C7CDD8", cursor: "pointer", color: "#1E3A6D",
-            fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13,
-          }}>
-            <Plus size={16} /> Add new card
-          </div>
-        </div>
-
-        {addingCard && (
-          <div style={{ background: "#F4F5F8", borderRadius: 12, padding: 14, marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "#64707E", marginBottom: 10 }}>
-              <Lock size={12} /> Handled securely by Stripe -- your card details never touch this app directly.
-            </div>
-            <input placeholder="Card number" disabled style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", fontSize: 13, marginBottom: 8, fontFamily: "'IBM Plex Mono', monospace", color: "#B0B8C4" }} />
-            <div style={{ display: "flex", gap: 8 }}>
-              <input placeholder="MM/YY" disabled style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", fontSize: 13, fontFamily: "'IBM Plex Mono', monospace", color: "#B0B8C4" }} />
-              <input placeholder="CVC" disabled style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", fontSize: 13, fontFamily: "'IBM Plex Mono', monospace", color: "#B0B8C4" }} />
-            </div>
-          </div>
-        )}
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>
-          <ShieldCheck size={13} /> Processed by Stripe, PCI-DSS compliant -- no card data stored in this app
+          <ShieldCheck size={13} /> You'll pay securely on Stripe's own checkout page -- your card details never touch this app
         </div>
 
-        <button onClick={() => setPlaced(true)} style={{
+        {error && <div style={{ color: "#C4573F", fontSize: 12, fontFamily: "'Inter', sans-serif", marginBottom: 10, textAlign: "center" }}>{error}</div>}
+
+        <button onClick={startCheckout} disabled={busy} style={{
           width: "100%", padding: "14px 0", borderRadius: 14, background: "#E8631E", color: "#fff",
-          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1,
         }}>
-          {"Pay S$" + subtotal}
+          {busy ? "Redirecting to checkout..." : "Pay S$" + total}
         </button>
       </div>
     </div>
@@ -1207,9 +1489,30 @@ function FormsTab({ profile, patientId, onLogout }) {
       </Card>
 
       <div>
-        <SectionLabel>Questionnaires</SectionLabel>
+        <SectionLabel>Hearing Questionnaires</SectionLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+          {QUESTIONNAIRES.filter((q) => q.category === "hearing").map((q) => {
+            const rec = saved[q.id];
+            return (
+              <Card key={q.id} onClick={() => !q.comingSoon && setActive(q)} style={{ display: "flex", alignItems: "center", gap: 12, opacity: q.comingSoon ? 0.55 : 1 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: rec ? "#E3EBE2" : "#F0EFEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {rec ? <Check size={16} color="#4C6349" /> : <ClipboardList size={16} color="#8A96A3" />}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{q.short}</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 2 }}>
+                    {q.comingSoon ? "Coming soon" : rec ? "Last completed " + rec.completedAt + " . " + rec.band : q.questions.length + " items . " + q.desc}
+                  </div>
+                </div>
+                {!q.comingSoon && <ChevronRight size={16} color="#8A96A3" />}
+              </Card>
+            );
+          })}
+        </div>
+
+        <SectionLabel>Tinnitus Questionnaires</SectionLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {QUESTIONNAIRES.map((q) => {
+          {QUESTIONNAIRES.filter((q) => q.category === "tinnitus").map((q) => {
             const rec = saved[q.id];
             return (
               <Card key={q.id} onClick={() => setActive(q)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1219,7 +1522,7 @@ function FormsTab({ profile, patientId, onLogout }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{q.short}</div>
                   <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 2 }}>
-                    {rec ? "Last completed " + rec.completedAt + " . Score " + rec.score : q.items + " items . " + q.desc}
+                    {rec ? "Last completed " + rec.completedAt + " . " + rec.band : q.questions.length + " items . " + q.desc}
                   </div>
                 </div>
                 <ChevronRight size={16} color="#8A96A3" />
@@ -1284,7 +1587,6 @@ function EditProfileModal({ profile, onSave, onClose }) {
               <option value="">Prefer not to say</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
-              <option value="Other">Other</option>
             </select>
           </FieldRow>
           <FieldRow label="Address"><input style={inputStyle} value={draft.address} onChange={set("address")} /></FieldRow>
@@ -1292,7 +1594,8 @@ function EditProfileModal({ profile, onSave, onClose }) {
           <FieldRow label="Email"><input type="email" style={inputStyle} value={draft.email} onChange={set("email")} /></FieldRow>
           <FieldRow label="Mobile number"><input style={inputStyle} value={draft.mobile} onChange={set("mobile")} /></FieldRow>
           <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3", marginBottom: 6, marginTop: 14 }}>SIGNIFICANT OTHER</div>
-          <FieldRow label="Name"><input style={inputStyle} value={draft.significantOtherName} onChange={set("significantOtherName")} /></FieldRow>
+          <FieldRow label="First name"><input style={inputStyle} value={draft.significantOtherFirstName} onChange={set("significantOtherFirstName")} /></FieldRow>
+          <FieldRow label="Last name"><input style={inputStyle} value={draft.significantOtherLastName} onChange={set("significantOtherLastName")} /></FieldRow>
           <FieldRow label="Relation"><input style={inputStyle} placeholder="e.g. Spouse, Daughter, Son" value={draft.significantOtherRelation} onChange={set("significantOtherRelation")} /></FieldRow>
         </div>
 
@@ -1394,7 +1697,24 @@ function AdminPanel({ data, onSave, onClose }) {
         <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
           {section === "profile" && (
             <>
-              <FieldRow label="First name"><input style={inputStyle} value={draft.profile.firstName} onChange={(e) => setField("firstName", e.target.value)} /></FieldRow>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: draft.profile.intakeCompleted ? "#4C6349" : "#A8451B", marginBottom: 14, fontFamily: "'Inter', sans-serif", background: draft.profile.intakeCompleted ? "#E3EBE2" : "#FCE4D2", padding: 10, borderRadius: 10 }}>
+                {draft.profile.intakeCompleted ? <Check size={13} /> : <ClipboardList size={13} />}
+                {draft.profile.intakeCompleted ? "Registration form completed" : "New lead -- registration form not yet completed"}
+                <span onClick={() => setField("intakeCompleted", !draft.profile.intakeCompleted)} style={{ marginLeft: "auto", textDecoration: "underline", cursor: "pointer" }}>
+                  {draft.profile.intakeCompleted ? "Mark as new lead" : "Mark as completed"}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ width: 90 }}>
+                  <FieldRow label="Salutation">
+                    <select style={inputStyle} value={draft.profile.salutation} onChange={(e) => setField("salutation", e.target.value)}>
+                      <option value=""></option>
+                      {SALUTATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </FieldRow>
+                </div>
+                <div style={{ flex: 1 }}><FieldRow label="First name"><input style={inputStyle} value={draft.profile.firstName} onChange={(e) => setField("firstName", e.target.value)} /></FieldRow></div>
+              </div>
               <FieldRow label="Last name"><input style={inputStyle} value={draft.profile.lastName} onChange={(e) => setField("lastName", e.target.value)} /></FieldRow>
               <FieldRow label="Patient ID"><input style={inputStyle} value={draft.profile.id} onChange={(e) => setField("id", e.target.value)} /></FieldRow>
               <FieldRow label="Date of birth"><input style={inputStyle} value={draft.profile.dob} onChange={(e) => setField("dob", e.target.value)} /></FieldRow>
@@ -1403,15 +1723,32 @@ function AdminPanel({ data, onSave, onClose }) {
                   <option value="">Not specified</option>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
-                  <option value="Other">Other</option>
                 </select>
               </FieldRow>
+              <FieldRow label="Nationality"><input style={inputStyle} value={draft.profile.nationality} onChange={(e) => setField("nationality", e.target.value)} /></FieldRow>
               <FieldRow label="Address"><input style={inputStyle} value={draft.profile.address} onChange={(e) => setField("address", e.target.value)} /></FieldRow>
               <FieldRow label="Postal code"><input style={inputStyle} value={draft.profile.postalCode} onChange={(e) => setField("postalCode", e.target.value)} /></FieldRow>
+              <FieldRow label="Spoken languages"><input style={inputStyle} value={draft.profile.spokenLanguages} onChange={(e) => setField("spokenLanguages", e.target.value)} /></FieldRow>
+              <FieldRow label="Occupation"><input style={inputStyle} value={draft.profile.occupation} onChange={(e) => setField("occupation", e.target.value)} /></FieldRow>
               <FieldRow label="Email"><input style={inputStyle} value={draft.profile.email} onChange={(e) => setField("email", e.target.value)} /></FieldRow>
               <FieldRow label="Mobile number"><input style={inputStyle} value={draft.profile.mobile} onChange={(e) => setField("mobile", e.target.value)} /></FieldRow>
-              <FieldRow label="Significant other's name"><input style={inputStyle} value={draft.profile.significantOtherName} onChange={(e) => setField("significantOtherName", e.target.value)} /></FieldRow>
-              <FieldRow label="Relation"><input style={inputStyle} value={draft.profile.significantOtherRelation} onChange={(e) => setField("significantOtherRelation", e.target.value)} /></FieldRow>
+
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3", marginBottom: 6, marginTop: 14 }}>SIGNIFICANT OTHER</div>
+              <FieldRow label="Relationship"><input style={inputStyle} value={draft.profile.significantOtherRelation} onChange={(e) => setField("significantOtherRelation", e.target.value)} /></FieldRow>
+              <FieldRow label="First name"><input style={inputStyle} value={draft.profile.significantOtherFirstName} onChange={(e) => setField("significantOtherFirstName", e.target.value)} /></FieldRow>
+              <FieldRow label="Last name"><input style={inputStyle} value={draft.profile.significantOtherLastName} onChange={(e) => setField("significantOtherLastName", e.target.value)} /></FieldRow>
+              <FieldRow label="Contact no."><input style={inputStyle} value={draft.profile.significantOtherContact} onChange={(e) => setField("significantOtherContact", e.target.value)} /></FieldRow>
+              <FieldRow label="Email"><input style={inputStyle} value={draft.profile.significantOtherEmail} onChange={(e) => setField("significantOtherEmail", e.target.value)} /></FieldRow>
+
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3", marginBottom: 6, marginTop: 14 }}>ENQUIRY & REFERRAL</div>
+              <FieldRow label="How did they know about us?">
+                <select style={inputStyle} value={draft.profile.referralSource} onChange={(e) => setField("referralSource", e.target.value)}>
+                  <option value="">Not specified</option>
+                  {KNOW_US_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </FieldRow>
+              <FieldRow label="Medical referral doctor (if any)"><input style={inputStyle} value={draft.profile.referralDoctorName} onChange={(e) => setField("referralDoctorName", e.target.value)} /></FieldRow>
+
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3", marginBottom: 6, marginTop: 14 }}>CLINIC-MANAGED</div>
               <FieldRow label="Home clinic"><input style={inputStyle} value={draft.profile.clinic} onChange={(e) => setField("clinic", e.target.value)} /></FieldRow>
               <FieldRow label="Audiologist"><input style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)} /></FieldRow>
@@ -1603,23 +1940,57 @@ function AdminPanel({ data, onSave, onClose }) {
 --------------------------------------------------------- */
 function SplashScreen({ onDone }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 1500);
+    const t = setTimeout(onDone, 1800);
     return () => clearTimeout(t);
   }, [onDone]);
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "#F4F5F8", zIndex: 100,
+      position: "fixed", inset: 0, background: "#FFFFFF", zIndex: 100,
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      overflow: "hidden",
     }}>
       <style>{"@keyframes splashIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }"}</style>
-      <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 220, animation: "splashIn 0.7s ease-out" }} />
+
       <div style={{
-        fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 15, color: "#E8631E",
-        letterSpacing: "0.06em", marginTop: 18, animation: "splashIn 0.7s ease-out 0.15s backwards",
+        fontFamily: "'Fraunces', serif", fontWeight: 400, fontSize: 26, color: "#1E3A6D",
+        marginBottom: 18, animation: "splashIn 0.7s ease-out",
+      }}>
+        Welcome to
+      </div>
+
+      <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 230, animation: "splashIn 0.7s ease-out 0.1s backwards" }} />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px 0 20px", animation: "splashIn 0.7s ease-out 0.2s backwards" }}>
+        <div style={{ width: 44, height: 2, background: "#E8631E" }} />
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#E8631E" }} />
+        <div style={{ width: 44, height: 2, background: "#1E3A6D" }} />
+      </div>
+
+      <div style={{
+        fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 18, color: "#1E3A6D",
+        animation: "splashIn 0.7s ease-out 0.3s backwards",
       }}>
         Hear More. Do More. Be More.
       </div>
+
+      <svg viewBox="0 0 500 220" preserveAspectRatio="none" style={{
+        position: "absolute", bottom: 0, left: 0, width: "100%", height: "26vh", opacity: 0.85,
+      }}>
+        <defs>
+          <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#E8631E" />
+            <stop offset="100%" stopColor="#1E3A6D" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <path
+            key={i}
+            d={"M0 " + (140 + i * 8) + " C 100 " + (80 + i * 6) + ", 180 " + (190 - i * 6) + ", 260 " + (120 + i * 5) + " S 420 " + (60 + i * 6) + ", 500 " + (130 + i * 5)}
+            fill="none" stroke="url(#waveGrad)" strokeWidth="1" opacity={0.55 - i * 0.08}
+          />
+        ))}
+      </svg>
     </div>
   );
 }
@@ -1829,8 +2200,11 @@ function StaffView({ onLogout }) {
                   <User size={18} color="#1E3A6D" />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
-                    {(p.first_name || p.last_name) ? (p.first_name + " " + p.last_name).trim() : "(name not set)"}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
+                      {(p.first_name || p.last_name) ? (p.first_name + " " + p.last_name).trim() : "(name not set)"}
+                    </div>
+                    {!p.intake_completed && <Pill tone="accent">New lead</Pill>}
                   </div>
                   <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 1 }}>
                     {(p.email || "no email") + " . " + (p.patient_code || "no patient ID yet")}
@@ -1851,9 +2225,305 @@ function StaffView({ onLogout }) {
   );
 }
 
+/* ---------------------------------------------------------
+   NEW LEAD INTAKE -- shown once, on a brand-new patient's
+   first login, before they enter the normal app.
+--------------------------------------------------------- */
+const SALUTATIONS = ["Dr", "Mr", "Ms", "Mrs", "Mdm"];
+const KNOW_US_OPTIONS = ["Online Advertisement", "Google Search", "Walk-in", "Referral"];
+
+function IntakeForm({ email, patientId, onFinish }) {
+  const [step, setStep] = useState("form"); // form | hhiePrompt | hhieRunning | done
+  const [draft, setDraft] = useState({
+    salutation: "", firstName: "", lastName: "", gender: "", dob: "", mobile: "", nationality: "",
+    address: "", postalCode: "", spokenLanguages: "", occupation: "",
+    significantOtherRelation: "", significantOtherSalutation: "", significantOtherFirstName: "", significantOtherLastName: "",
+    significantOtherContact: "", significantOtherEmail: "",
+    referralSource: "", medicalReferral: null, referralDoctorName: "",
+    consentGiven: false, consentSignatureName: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const set = (key) => (e) => setDraft((p) => ({ ...p, [key]: e.target.value }));
+
+  const canSubmit = draft.firstName && draft.lastName && draft.mobile && draft.gender && draft.consentGiven && draft.consentSignatureName;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    try {
+      await db.completeIntake(patientId, draft);
+      setStep("hhiePrompt");
+    } catch (e) {
+      console.error(e);
+    }
+    setBusy(false);
+  };
+
+  const hhieQ = QUESTIONNAIRES.find((x) => x.id === "hhie");
+
+  if (step === "hhiePrompt") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+        <div style={{
+          width: "100%", maxWidth: 390, background: "#F4F5F8", borderRadius: 34, border: "8px solid #1B2430",
+          boxShadow: "0 24px 60px rgba(27,36,48,0.25)", padding: 32, textAlign: "center",
+        }}>
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 34, marginBottom: 20 }} />
+          <div style={{ width: 52, height: 52, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+            <ClipboardList size={22} color="#1E3A6D" />
+          </div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 500, color: "#1B2430", marginBottom: 8 }}>
+            One quick screening?
+          </div>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, marginBottom: 24 }}>
+            While you're here -- a 10-question hearing screening takes about 2 minutes and helps your audiologist prepare for your visit.
+          </p>
+          <button onClick={() => setStep("hhieRunning")} style={{
+            width: "100%", padding: "13px 0", borderRadius: 12, background: "#E8631E", color: "#fff",
+            border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 10,
+          }}>
+            Start screening
+          </button>
+          <div onClick={onFinish} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", cursor: "pointer" }}>
+            Skip for now -- I'll do it later
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "hhieRunning") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#E8EAEF" }}>
+        <QuestionnaireRunner
+          q={hhieQ}
+          onClose={onFinish}
+          onSave={async (record) => {
+            try { await db.saveQuestionnaireResponse(patientId, "hhie", record); } catch (e) { console.error(e); }
+            onFinish();
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+      <div style={{
+        width: "100%", maxWidth: 390, maxHeight: "92vh", background: "#F4F5F8", borderRadius: 34,
+        border: "8px solid #1B2430", boxShadow: "0 24px 60px rgba(27,36,48,0.25)", display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{ padding: "24px 20px 14px", textAlign: "center", borderBottom: "1px solid #E3E7EE" }}>
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 34, marginBottom: 10 }} />
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430" }}>Customer Registration</div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 4 }}>{"Signed in as " + email}</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <SectionLabel>Personal Information</SectionLabel>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ width: 90 }}>
+              <FieldRow label="Salutation">
+                <select style={inputStyle} value={draft.salutation} onChange={set("salutation")}>
+                  <option value=""></option>
+                  {SALUTATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </FieldRow>
+            </div>
+            <div style={{ flex: 1 }}><FieldRow label="First name *"><input style={inputStyle} value={draft.firstName} onChange={set("firstName")} /></FieldRow></div>
+          </div>
+          <FieldRow label="Last name *"><input style={inputStyle} value={draft.lastName} onChange={set("lastName")} /></FieldRow>
+          <FieldRow label="Gender *">
+            <div style={{ display: "flex", gap: 8 }}>
+              {["Male", "Female"].map((g) => (
+                <button key={g} onClick={() => setDraft((p) => ({ ...p, gender: g }))} style={{
+                  flex: 1, padding: "10px 0", borderRadius: 10, border: draft.gender === g ? "2px solid #1E3A6D" : "1px solid #E3E7EE",
+                  background: draft.gender === g ? "#E7ECF3" : "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                }}>{g}</button>
+              ))}
+            </div>
+          </FieldRow>
+          <FieldRow label="Date of birth"><input type="date" style={inputStyle} value={draft.dob} onChange={set("dob")} /></FieldRow>
+          <FieldRow label="Mobile / contact no. *"><input style={inputStyle} placeholder="+65 8XXX XXXX" value={draft.mobile} onChange={set("mobile")} /></FieldRow>
+          <FieldRow label="Nationality"><input style={inputStyle} value={draft.nationality} onChange={set("nationality")} /></FieldRow>
+          <FieldRow label="Address"><input style={inputStyle} value={draft.address} onChange={set("address")} /></FieldRow>
+          <FieldRow label="Postal code"><input style={inputStyle} value={draft.postalCode} onChange={set("postalCode")} /></FieldRow>
+          <FieldRow label="Spoken languages"><input style={inputStyle} value={draft.spokenLanguages} onChange={set("spokenLanguages")} /></FieldRow>
+          <FieldRow label="Occupation"><input style={inputStyle} value={draft.occupation} onChange={set("occupation")} /></FieldRow>
+
+          <div style={{ height: 1, background: "#E3E7EE", margin: "18px 0" }} />
+          <SectionLabel>Significant Other Person (optional)</SectionLabel>
+          <FieldRow label="Relationship"><input style={inputStyle} value={draft.significantOtherRelation} onChange={set("significantOtherRelation")} /></FieldRow>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ width: 90 }}>
+              <FieldRow label="Salutation">
+                <select style={inputStyle} value={draft.significantOtherSalutation} onChange={set("significantOtherSalutation")}>
+                  <option value=""></option>
+                  {SALUTATIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </FieldRow>
+            </div>
+            <div style={{ flex: 1 }}><FieldRow label="First name"><input style={inputStyle} value={draft.significantOtherFirstName} onChange={set("significantOtherFirstName")} /></FieldRow></div>
+          </div>
+          <FieldRow label="Last name"><input style={inputStyle} value={draft.significantOtherLastName} onChange={set("significantOtherLastName")} /></FieldRow>
+          <FieldRow label="Contact no."><input style={inputStyle} value={draft.significantOtherContact} onChange={set("significantOtherContact")} /></FieldRow>
+          <FieldRow label="Email address"><input type="email" style={inputStyle} value={draft.significantOtherEmail} onChange={set("significantOtherEmail")} /></FieldRow>
+
+          <div style={{ height: 1, background: "#E3E7EE", margin: "18px 0" }} />
+          <SectionLabel>How do you know about us?</SectionLabel>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {KNOW_US_OPTIONS.map((opt) => (
+              <div key={opt} onClick={() => setDraft((p) => ({ ...p, referralSource: opt }))} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10,
+                border: draft.referralSource === opt ? "2px solid #1E3A6D" : "1px solid #E3E7EE", cursor: "pointer",
+              }}>
+                <div style={{
+                  width: 15, height: 15, borderRadius: "50%", border: "2px solid " + (draft.referralSource === opt ? "#1E3A6D" : "#C7CDD8"),
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  {draft.referralSource === opt && <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#1E3A6D" }} />}
+                </div>
+                <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#1B2430" }}>{opt}</span>
+              </div>
+            ))}
+          </div>
+
+          <FieldRow label="Medical referral?">
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["Yes", true], ["No", false]].map(([label, val]) => (
+                <button key={label} onClick={() => setDraft((p) => ({ ...p, medicalReferral: val }))} style={{
+                  flex: 1, padding: "10px 0", borderRadius: 10, border: draft.medicalReferral === val ? "2px solid #1E3A6D" : "1px solid #E3E7EE",
+                  background: draft.medicalReferral === val ? "#E7ECF3" : "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                }}>{label}</button>
+              ))}
+            </div>
+          </FieldRow>
+          {draft.medicalReferral === true && (
+            <FieldRow label="GP / ENT's name"><input style={inputStyle} value={draft.referralDoctorName} onChange={set("referralDoctorName")} /></FieldRow>
+          )}
+
+          <div style={{ height: 1, background: "#E3E7EE", margin: "18px 0" }} />
+          <SectionLabel>Personal Data Privacy Consent</SectionLabel>
+          <div style={{ background: "#fff", border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 14 }}>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E", lineHeight: 1.6, margin: "0 0 10px" }}>
+              By signing below, you agree that Amazing Hearing Group Pte Ltd may collect, use and disclose your personal data provided in this form within our organization for the purposes below, in accordance with the Personal Data Protection Act 2012. Our data protection policy is available at hearingaids.com.sg/privacy-policy/.
+            </p>
+            <ul style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E", lineHeight: 1.8, margin: 0, paddingLeft: 18 }}>
+              <li>Audiological and medical records</li>
+              <li>Reminders on reviews and follow-ups</li>
+              <li>Doctor referral reports</li>
+              <li>Marketing materials with latest promotions, new products, and services</li>
+            </ul>
+          </div>
+          <div onClick={() => setDraft((p) => ({ ...p, consentGiven: !p.consentGiven }))} style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer", marginBottom: 14 }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: 6, border: "2px solid " + (draft.consentGiven ? "#1E3A6D" : "#C7CDD8"),
+              background: draft.consentGiven ? "#1E3A6D" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
+            }}>
+              {draft.consentGiven && <Check size={13} color="#fff" />}
+            </div>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#1B2430", lineHeight: 1.5 }}>
+              I have read and agree to the consent statement above. *
+            </span>
+          </div>
+          <FieldRow label="Full name (as signature) *"><input style={inputStyle} value={draft.consentSignatureName} onChange={set("consentSignatureName")} /></FieldRow>
+        </div>
+
+        <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
+          <button onClick={submit} disabled={!canSubmit || busy} style={{
+            width: "100%", padding: "14px 0", borderRadius: 14, background: canSubmit ? "#E8631E" : "#D9D4C8",
+            color: "#fff", border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14,
+            cursor: canSubmit && !busy ? "pointer" : "default",
+          }}>
+            {busy ? "Saving..." : "Submit registration"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   PAYMENT RETURN -- shown when Stripe redirects back after
+   checkout, with a WhatsApp handoff to notify the clinic.
+--------------------------------------------------------- */
+function PaymentReturnScreen({ status, onContinue }) {
+  const [order, setOrder] = useState(null);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("ahg_pending_order");
+      if (raw) setOrder(JSON.parse(raw));
+      sessionStorage.removeItem("ahg_pending_order");
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  const waLink = () => {
+    if (!order) return "#";
+    const lines = [
+      "New order paid via app",
+      "Patient: " + order.patientName + " (" + order.patientId + ")",
+      ...order.items.map((i) => i.qty + "x " + i.name + " -- S$" + (i.price * i.qty).toFixed(2)),
+      "Total (incl. GST): S$" + order.total.toFixed(2),
+    ].join("\n");
+    return "https://wa.me/" + (order.clinicPhone || "").replace(/[^\d]/g, "") + "?text=" + encodeURIComponent(lines);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+      <div style={{
+        width: "100%", maxWidth: 390, background: "#F4F5F8", borderRadius: 34, border: "8px solid #1B2430",
+        boxShadow: "0 24px 60px rgba(27,36,48,0.25)", padding: 32, textAlign: "center",
+      }}>
+        <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 34, marginBottom: 20 }} />
+        {status === "success" ? (
+          <>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#E3EBE2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <Check size={26} color="#4C6349" />
+            </div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 500, color: "#1B2430", marginBottom: 8 }}>Payment successful</div>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, marginBottom: 20 }}>
+              {order ? "Your order is confirmed. Send the details to your clinic on WhatsApp so they can prepare it." : "Your payment went through."}
+            </p>
+            {order && (
+              <a href={waLink()} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "13px 0",
+                  borderRadius: 12, background: "#25D366", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, marginBottom: 10,
+                }}>
+                  <MessageCircle size={16} /> Send order to clinic
+                </div>
+              </a>
+            )}
+            <div onClick={onContinue} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", cursor: "pointer" }}>
+              Continue to app
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#F5DED8", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <X size={26} color="#A8452F" />
+            </div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 19, fontWeight: 500, color: "#1B2430", marginBottom: 8 }}>Checkout cancelled</div>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, marginBottom: 20 }}>
+              No charge was made. Your cart is still saved if you'd like to try again.
+            </p>
+            <button onClick={onContinue} style={{
+              width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
+              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+            }}>
+              Back to app
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AmazingHearingApp() {
   useFonts();
-  const [phase, setPhase] = useState("splash"); // splash | login | app | staff
+  const [phase, setPhase] = useState("splash"); // splash | login | intake | app | staff
   const [tab, setTab] = useState("home");
   const [cart, setCart] = useState({});
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -1861,6 +2531,7 @@ export default function AmazingHearingApp() {
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
 
   const [patientId, setPatientId] = useState(null);
+  const [userEmail, setUserEmail] = useState("");
   const [bundle, setBundle] = useState(null);
   const [loadError, setLoadError] = useState("");
 
@@ -1872,8 +2543,13 @@ export default function AmazingHearingApp() {
         return;
       }
       const patientRow = await db.resolveMyPatientRecord(user);
-      const freshBundle = await db.fetchPatientBundle(patientRow.id);
       setPatientId(patientRow.id);
+      setUserEmail(user.email);
+      if (!patientRow.intake_completed) {
+        setPhase("intake");
+        return;
+      }
+      const freshBundle = await db.fetchPatientBundle(patientRow.id);
       setBundle(freshBundle);
       setPhase("app");
     } catch (e) {
@@ -1881,6 +2557,12 @@ export default function AmazingHearingApp() {
       setLoadError("Couldn't load your account -- please try again.");
       setPhase("login");
     }
+  };
+
+  const handleIntakeFinished = async () => {
+    const freshBundle = await db.fetchPatientBundle(patientId);
+    setBundle(freshBundle);
+    setPhase("app");
   };
 
   const handleSplashDone = async () => {
@@ -1919,6 +2601,19 @@ export default function AmazingHearingApp() {
     { key: "forms", label: "Forms", icon: ClipboardList },
   ];
 
+  const [checkoutStatus] = useState(() => new URLSearchParams(window.location.search).get("checkout"));
+  const clearCheckoutParam = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("checkout");
+    url.searchParams.delete("session_id");
+    window.history.replaceState({}, "", url.toString());
+    window.location.reload();
+  };
+
+  if (checkoutStatus === "success" || checkoutStatus === "cancel") {
+    return <PaymentReturnScreen status={checkoutStatus} onContinue={clearCheckoutParam} />;
+  }
+
   if (phase === "splash") {
     return (
       <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1942,6 +2637,10 @@ export default function AmazingHearingApp() {
 
   if (phase === "staff") {
     return <StaffView onLogout={handleLogout} />;
+  }
+
+  if (phase === "intake") {
+    return <IntakeForm email={userEmail} patientId={patientId} onFinish={handleIntakeFinished} />;
   }
 
   if (!bundle) {
@@ -1986,7 +2685,7 @@ export default function AmazingHearingApp() {
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
           {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => setEditProfileOpen(true)} />}
           {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: [0, 0, 0, 0, 0, 0], left: [0, 0, 0, 0, 0, 0] }]} sin={sin} />}
-          {tab === "device" && <DeviceTab devices={devices} datalog={datalog} />}
+          {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={() => setCheckoutOpen(true)} />}
           {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} />}
