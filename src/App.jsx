@@ -1940,7 +1940,7 @@ function AdminPanel({ data, onSave, onClose }) {
 --------------------------------------------------------- */
 function SplashScreen({ onDone }) {
   useEffect(() => {
-    const t = setTimeout(onDone, 1800);
+    const t = setTimeout(onDone, 1300);
     return () => clearTimeout(t);
   }, [onDone]);
 
@@ -2018,22 +2018,37 @@ function OtpLogin({ onLogin }) {
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "#F4F5F8", zIndex: 99,
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24,
+      position: "fixed", inset: 0, background: "#FFFFFF", zIndex: 99,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden",
     }}>
-      <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 170, marginBottom: 28 }} />
+      <style>{"@keyframes splashIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }"}</style>
 
-      <div style={{ width: "100%", maxWidth: 340 }}>
+      <div style={{
+        fontFamily: "'Fraunces', serif", fontWeight: 400, fontSize: 22, color: "#1E3A6D",
+        marginBottom: 14, animation: "splashIn 0.6s ease-out",
+      }}>
+        Welcome to
+      </div>
+
+      <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 190, animation: "splashIn 0.6s ease-out 0.08s backwards" }} />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 24px", animation: "splashIn 0.6s ease-out 0.16s backwards" }}>
+        <div style={{ width: 36, height: 2, background: "#E8631E" }} />
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#E8631E" }} />
+        <div style={{ width: 36, height: 2, background: "#1E3A6D" }} />
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 340, animation: "splashIn 0.6s ease-out 0.24s backwards" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, justifyContent: "center" }}>
-          <Mail size={16} color="#1E3A6D" />
-          <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430" }}>
+          <Mail size={15} color="#1E3A6D" />
+          <span style={{ fontFamily: "'Fraunces', serif", fontSize: 16, fontWeight: 500, color: "#1B2430" }}>
             {sent ? "Check your email" : "Sign in"}
           </span>
         </div>
 
         {!sent ? (
           <>
-            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", marginBottom: 20 }}>
+            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", marginBottom: 18 }}>
               Enter your email to continue
             </p>
             <input
@@ -2051,7 +2066,7 @@ function OtpLogin({ onLogin }) {
           </>
         ) : (
           <>
-            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", marginBottom: 20, lineHeight: 1.6 }}>
+            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", marginBottom: 18, lineHeight: 1.6 }}>
               {"We've sent a sign-in link to " + email + ". Open it on this device to continue -- it'll open in a new tab and sign you straight in."}
             </p>
             <div onClick={() => { setSent(false); setError(""); }} style={{
@@ -2062,6 +2077,24 @@ function OtpLogin({ onLogin }) {
           </>
         )}
       </div>
+
+      <svg viewBox="0 0 500 220" preserveAspectRatio="none" style={{
+        position: "absolute", bottom: 0, left: 0, width: "100%", height: "16vh", opacity: 0.6, pointerEvents: "none",
+      }}>
+        <defs>
+          <linearGradient id="waveGradLogin" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#E8631E" />
+            <stop offset="100%" stopColor="#1E3A6D" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <path
+            key={i}
+            d={"M0 " + (140 + i * 8) + " C 100 " + (80 + i * 6) + ", 180 " + (190 - i * 6) + ", 260 " + (120 + i * 5) + " S 420 " + (60 + i * 6) + ", 500 " + (130 + i * 5)}
+            fill="none" stroke="url(#waveGradLogin)" strokeWidth="1" opacity={0.5 - i * 0.08}
+          />
+        ))}
+      </svg>
     </div>
   );
 }
