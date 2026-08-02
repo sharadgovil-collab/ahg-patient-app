@@ -1627,13 +1627,12 @@ function SplashScreen({ onDone }) {
 function OtpLogin({ onLogin }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-  const [entered, setEntered] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const isValidEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
 
-  const sendCode = async () => {
+  const sendLink = async () => {
     if (!isValidEmail(email)) { setError("Enter a valid email address"); return; }
     setBusy(true);
     setError("");
@@ -1641,19 +1640,7 @@ function OtpLogin({ onLogin }) {
       await db.sendEmailOtp(email);
       setSent(true);
     } catch (e) {
-      setError(e.message || "Couldn't send code -- try again");
-    }
-    setBusy(false);
-  };
-
-  const verify = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      const user = await db.verifyEmailOtp(email, entered);
-      onLogin(user);
-    } catch (e) {
-      setError("Incorrect or expired code -- try again");
+      setError(e.message || "Couldn't send the link -- try again");
     }
     setBusy(false);
   };
@@ -1669,44 +1656,34 @@ function OtpLogin({ onLogin }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, justifyContent: "center" }}>
           <Mail size={16} color="#1E3A6D" />
           <span style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430" }}>
-            {sent ? "Enter your code" : "Sign in"}
+            {sent ? "Check your email" : "Sign in"}
           </span>
         </div>
-        <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", marginBottom: 20 }}>
-          {sent ? "We've sent a 6-digit code to " + email : "Enter your email to continue"}
-        </p>
 
         {!sent ? (
           <>
+            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", marginBottom: 20 }}>
+              Enter your email to continue
+            </p>
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com" style={{ ...inputStyle, textAlign: "center", fontSize: 15, marginBottom: 10 }}
             />
             {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 10, textAlign: "center" }}>{error}</div>}
-            <button onClick={sendCode} disabled={busy} style={{
+            <button onClick={sendLink} disabled={busy} style={{
               width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
               border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer",
               opacity: busy ? 0.7 : 1,
             }}>
-              {busy ? "Sending..." : "Send code"}
+              {busy ? "Sending..." : "Send sign-in link"}
             </button>
           </>
         ) : (
           <>
-            <input
-              value={entered} onChange={(e) => { setEntered(e.target.value); setError(""); }}
-              placeholder="6-digit code" maxLength={6}
-              style={{ ...inputStyle, textAlign: "center", fontSize: 20, letterSpacing: "0.4em", marginBottom: 10 }}
-            />
-            {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 10, textAlign: "center" }}>{error}</div>}
-            <button onClick={verify} disabled={busy} style={{
-              width: "100%", padding: "13px 0", borderRadius: 12, background: "#E8631E", color: "#fff",
-              border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", marginBottom: 10,
-              opacity: busy ? 0.7 : 1,
-            }}>
-              {busy ? "Verifying..." : "Verify & continue"}
-            </button>
-            <div onClick={() => { setSent(false); setEntered(""); setError(""); }} style={{
+            <p style={{ textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", marginBottom: 20, lineHeight: 1.6 }}>
+              {"We've sent a sign-in link to " + email + ". Open it on this device to continue -- it'll open in a new tab and sign you straight in."}
+            </p>
+            <div onClick={() => { setSent(false); setError(""); }} style={{
               textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", cursor: "pointer",
             }}>
               Use a different email
