@@ -33,14 +33,26 @@ export async function signOut() {
   await supabase.auth.signOut();
 }
 
-export async function isStaffUser(userId) {
+export async function fetchStaffRecord(userId) {
   const { data, error } = await supabase
     .from("staff_users")
-    .select("user_id")
+    .select("*")
     .eq("user_id", userId)
     .maybeSingle();
-  if (error) return false;
-  return !!data;
+  if (error) return null;
+  if (!data) return null;
+  return {
+    userId: data.user_id, firstName: data.first_name || "", lastName: data.last_name || "",
+    clinicName: data.clinic_name || "", role: data.role || "staff",
+  };
+}
+
+export async function registerStaff(userId, { firstName, lastName, clinicName }) {
+  const { error } = await supabase.from("staff_users").insert({
+    user_id: userId, first_name: firstName, last_name: lastName, clinic_name: clinicName,
+    name: (firstName + " " + lastName).trim(), role: "staff",
+  });
+  if (error) throw error;
 }
 
 /* ---------------------------------------------------------
@@ -94,15 +106,22 @@ export function mapProfileRow(row) {
     dob: row.dob || "", gender: row.gender || "", address: row.address || "", postalCode: row.postal_code || "",
     email: row.email || "", mobile: row.mobile || "", significantOtherName: row.significant_other_name || "",
     significantOtherRelation: row.significant_other_relation || "", clinic: row.clinic || "", audiologist: row.audiologist || "",
-    clinicPhone: row.clinic_phone || "",
+    clinicPhone: row.clinic_phone || "", intakeCompleted: !!row.intake_completed, photoUrl: row.photo_url || "",
+    salutation: row.salutation || "", nationality: row.nationality || "", spokenLanguages: row.spoken_languages || "",
+    occupation: row.occupation || "", significantOtherSalutation: row.significant_other_salutation || "",
+    significantOtherContact: row.significant_other_contact || "", significantOtherEmail: row.significant_other_email || "",
+    referralSource: row.referral_source || "", medicalReferral: row.medical_referral,
+    referralDoctorName: row.referral_doctor_name || "", consentGiven: !!row.consent_given,
+    consentSignatureName: row.consent_signature_name || "",
   };
 }
 
 export async function fetchPatientBundle(patientId) {
-  const [profileRes, audioRes, sinRes, devicesRes, apptsRes, docsRes, datalogRes] = await Promise.all([
+  const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes] = await Promise.all([
     supabase.from("patients").select("*").eq("id", patientId).single(),
     supabase.from("audiograms").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
     supabase.from("sin_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("cognitive_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("devices").select("*").eq("patient_id", patientId),
     supabase.from("appointments").select("*").eq("patient_id", patientId),
     supabase.from("documents").select("*").eq("patient_id", patientId),
@@ -117,6 +136,9 @@ export async function fetchPatientBundle(patientId) {
     sin: sinRes.data
       ? { id: sinRes.data.id, srtDb: sinRes.data.srt_db, label: sinRes.data.label, date: sinRes.data.test_date, percentile: sinRes.data.percentile }
       : { srtDb: 0, label: "Not yet tested", date: "--", percentile: 0 },
+    cognitive: cognitiveRes.data
+      ? { id: cognitiveRes.data.id, testDate: cognitiveRes.data.test_date || "", score: cognitiveRes.data.score || "", interpretation: cognitiveRes.data.interpretation || "", notes: cognitiveRes.data.notes || "" }
+      : { testDate: "", score: "", interpretation: "", notes: "" },
     devices: (devicesRes.data || []).map((d) => ({
       id: d.id, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted, warranty: d.warranty, lastService: d.last_service,
     })),
@@ -124,7 +146,7 @@ export async function fetchPatientBundle(patientId) {
       id: a.id, type: a.type, date: a.appt_date, time: a.appt_time, clinic: a.clinic, status: a.status,
     })),
     documents: (docsRes.data || []).map((d) => ({
-      id: d.id, title: d.title, category: d.category, date: d.doc_date, url: d.url,
+      id: d.id, title: d.title, category: d.category, date: d.doc_date, url: d.url, isStoragePath: !!d.is_storage_path,
     })),
     datalog: datalogRes.data
       ? { avgWear: datalogRes.data.avg_wear, lastSynced: datalogRes.data.last_synced }
@@ -229,9 +251,54 @@ export async function saveProfileFields(patientId, profile) {
       address: profile.address, postal_code: profile.postalCode, email: profile.email, mobile: profile.mobile,
       significant_other_name: profile.significantOtherName, significant_other_relation: profile.significantOtherRelation,
       clinic: profile.clinic, audiologist: profile.audiologist, clinic_phone: profile.clinicPhone,
+      intake_completed: !!profile.intakeCompleted, photo_url: profile.photoUrl || null,
+      salutation: profile.salutation || null, nationality: profile.nationality || null,
+      spoken_languages: profile.spokenLanguages || null, occupation: profile.occupation || null,
+      significant_other_salutation: profile.significantOtherSalutation || null,
+      significant_other_contact: profile.significantOtherContact || null,
+      significant_other_email: profile.significantOtherEmail || null,
+      referral_source: profile.referralSource || null, medical_referral: profile.medicalReferral,
+      referral_doctor_name: profile.referralDoctorName || null,
+      consent_given: profile.consentGiven, consent_signature_name: profile.consentSignatureName || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", patientId);
+  if (error) throw error;
+}
+
+/* ---------------------------------------------------------
+   PATIENT: PHOTO + FILE UPLOADS (Supabase Storage)
+--------------------------------------------------------- */
+// Both patient-photos and patient-documents are private buckets -- upload returns the
+// storage path (not a public URL), and getSignedFileUrl() below mints a fresh,
+// time-limited URL each time something actually needs to be viewed.
+export async function uploadPatientFile(bucket, patientId, file) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = patientId + "/" + Date.now() + "_" + safeName;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+export async function getSignedFileUrl(bucket, path, expiresInSeconds = 3600) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresInSeconds);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function savePhotoUrl(patientId, photoPath) {
+  const { error } = await supabase
+    .from("patients")
+    .update({ photo_url: photoPath, updated_at: new Date().toISOString() })
+    .eq("id", patientId);
+  if (error) throw error;
+}
+
+export async function addDocument(patientId, doc) {
+  const { error } = await supabase.from("documents").insert({
+    patient_id: patientId, title: doc.title, category: doc.category, doc_date: doc.date,
+    url: doc.url, is_storage_path: !!doc.isStoragePath,
+  });
   if (error) throw error;
 }
 
@@ -254,6 +321,15 @@ export async function saveSinResult(patientId, sin) {
     await supabase.from("sin_results").update(row).eq("id", sin.id);
   } else {
     await supabase.from("sin_results").insert(row);
+  }
+}
+
+export async function saveCognitiveResult(patientId, cognitive) {
+  const row = { patient_id: patientId, test_date: cognitive.testDate, score: cognitive.score, interpretation: cognitive.interpretation, notes: cognitive.notes };
+  if (isUuid(cognitive.id)) {
+    await supabase.from("cognitive_results").update(row).eq("id", cognitive.id);
+  } else {
+    await supabase.from("cognitive_results").insert(row);
   }
 }
 

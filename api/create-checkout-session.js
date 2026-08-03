@@ -57,6 +57,7 @@ const PRODUCTS = {
 };
 
 const LACE_PRODUCT = { name: "Amazing Hearing LACE AI Pro", price: 499 };
+const DBFS_PRODUCT = { name: "Digital Brain Function Screen (DBFS) -- Neurowyzer", price: 100.00 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -125,6 +126,29 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "No valid items in cart" });
       }
       const total = orderSummary.reduce((sum, i) => sum + i.price * i.qty, 0);
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        payment_method_types: ["card"],
+        line_items: lineItems,
+        success_url: baseUrl + "/?checkout=success&session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: baseUrl + "/?checkout=cancel",
+      });
+      return res.status(200).json({ url: session.url, orderSummary, total });
+    }
+
+    if (type === "dbfs") {
+      // DBFS is priced flat, GST-inclusive -- charge exactly S$100.
+      lineItems.push({
+        price_data: {
+          currency: "sgd",
+          product_data: { name: DBFS_PRODUCT.name },
+          unit_amount: Math.round(DBFS_PRODUCT.price * 100),
+        },
+        quantity: 1,
+      });
+      orderSummary.push({ name: DBFS_PRODUCT.name, qty: 1, price: DBFS_PRODUCT.price });
+      const total = DBFS_PRODUCT.price;
 
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
