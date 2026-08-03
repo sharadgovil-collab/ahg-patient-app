@@ -1,5 +1,7 @@
 import { supabase } from "./supabaseClient.js";
 
+const STAFF_LOGIN_EMAIL = "staff-access@amazinghearing.com"; // internal account behind the staff PIN
+
 /* ---------------------------------------------------------
    AUTH
 --------------------------------------------------------- */
@@ -11,7 +13,11 @@ export async function sendEmailOtp(email) {
       emailRedirectTo: window.location.origin,
     },
   });
-  if (error) throw error;
+  if (error) {
+    const raw = error && typeof error.message === "string" ? error.message.trim() : "";
+    const readable = raw && raw !== "{}" && raw !== "[object Object]";
+    throw new Error(readable ? raw : "Couldn't send the sign-in email right now. Please try again shortly or contact support.");
+  }
 }
 
 export async function verifyEmailOtp(email, token) {
@@ -47,12 +53,13 @@ export async function fetchStaffRecord(userId) {
   };
 }
 
-export async function registerStaff(userId, { firstName, lastName, clinicName }) {
-  const { error } = await supabase.from("staff_users").insert({
-    user_id: userId, first_name: firstName, last_name: lastName, clinic_name: clinicName,
-    name: (firstName + " " + lastName).trim(), role: "staff",
+export async function signInStaffWithPin(pin) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: STAFF_LOGIN_EMAIL,
+    password: pin,
   });
-  if (error) throw error;
+  if (error) throw new Error("Incorrect PIN");
+  return data.user;
 }
 
 /* ---------------------------------------------------------
