@@ -163,6 +163,42 @@ export async function saveQuestionnaireResponse(patientId, questionnaireId, reco
 }
 
 /* ---------------------------------------------------------
+   PATIENT: COMPLETE INTAKE (registration form) -- called once,
+   on a brand-new patient's first login.
+--------------------------------------------------------- */
+export async function completeIntake(patientId, draft) {
+  const { error } = await supabase
+    .from("patients")
+    .update({
+      salutation: draft.salutation,
+      first_name: draft.firstName,
+      last_name: draft.lastName,
+      gender: draft.gender,
+      dob: draft.dob,
+      mobile: draft.mobile,
+      nationality: draft.nationality,
+      address: draft.address,
+      postal_code: draft.postalCode,
+      spoken_languages: draft.spokenLanguages,
+      occupation: draft.occupation,
+      significant_other_relation: draft.significantOtherRelation,
+      significant_other_salutation: draft.significantOtherSalutation,
+      significant_other_name: [draft.significantOtherFirstName, draft.significantOtherLastName].filter(Boolean).join(" "),
+      significant_other_contact: draft.significantOtherContact,
+      significant_other_email: draft.significantOtherEmail,
+      referral_source: draft.referralSource,
+      medical_referral: draft.medicalReferral,
+      referral_doctor_name: draft.referralDoctorName,
+      consent_given: draft.consentGiven,
+      consent_signature_name: draft.consentSignatureName,
+      intake_completed: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", patientId);
+  if (error) throw error;
+}
+
+/* ---------------------------------------------------------
    STAFF: PATIENT LIST
 --------------------------------------------------------- */
 export async function fetchAllPatients() {
