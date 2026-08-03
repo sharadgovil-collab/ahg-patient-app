@@ -2360,7 +2360,7 @@ const ADMIN_SECTIONS = [
 // do is delete data. That's enforced for real at the database (RLS DELETE policies
 // are super_admin-only), but we also hide the remove/delete affordances for staff so
 // the UI doesn't offer an action that would silently no-op.
-function AdminPanel({ data, role, onSave, onClose }) {
+function AdminPanel({ data, patientId, role, onSave, onClose }) {
   const sections = ADMIN_SECTIONS;
   const canDelete = role === "super_admin";
   const [section, setSection] = useState(sections[0].key);
@@ -2372,7 +2372,7 @@ function AdminPanel({ data, role, onSave, onClose }) {
 
   const refreshDocuments = async () => {
     try {
-      const fresh = await db.fetchPatientBundle(data.profile.id);
+      const fresh = await db.fetchPatientBundle(patientId);
       setDraft((p) => ({ ...p, documents: fresh.documents }));
     } catch (e) { console.error("failed to refresh documents", e); }
   };
@@ -2707,7 +2707,7 @@ function AdminPanel({ data, role, onSave, onClose }) {
               ))}
               {uploadOpen && (
                 <UploadDocumentModal
-                  patientId={data.profile.id}
+                  patientId={patientId}
                   onClose={() => setUploadOpen(false)}
                   onUploaded={async () => { setUploadOpen(false); await refreshDocuments(); }}
                 />
@@ -3109,7 +3109,7 @@ function StaffView({ staffRecord, onLogout }) {
 
       {addOpen && <AddPatientModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />}
       {editing && (
-        <AdminPanel data={editing.bundle} role={staffRecord?.role || "staff"} onSave={handleSave} onClose={() => setEditing(null)} />
+        <AdminPanel data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "staff"} onSave={handleSave} onClose={() => setEditing(null)} />
       )}
     </div>
   );
