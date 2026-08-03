@@ -1333,9 +1333,9 @@ function DeviceTab({ devices, datalog, profile }) {
             {[
               ["Serial number", d.serial],
               ["Battery type", d.battery],
-              ["Fitted on", d.fitted],
-              ["Warranty", d.warranty],
-              ["Last serviced", d.lastService],
+              ["Fitted on", formatDateDMY(d.fitted)],
+              ["Warranty", formatDateDMY(d.warranty)],
+              ["Last serviced", formatDateDMY(d.lastService)],
             ].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F0EFEA", paddingTop: 8 }}>
                 <span style={{ color: "#8A96A3" }}>{k}</span>
@@ -1838,7 +1838,7 @@ function AppointmentRequestModal({ profile, onClose }) {
     const lines = [
       "Appointment Request",
       "Patient: " + profile.firstName + " " + profile.lastName + " (" + profile.id + ")",
-      "Preferred date: " + date,
+      "Preferred date: " + formatDateDMY(date),
       "Preferred time: " + time,
       reason ? "Reason: " + reason : "",
       note ? "Note: " + note : "",
@@ -1858,7 +1858,7 @@ function AppointmentRequestModal({ profile, onClose }) {
           Tell us your preferred date and time, and we'll send it to our clinic on WhatsApp -- our team will confirm with you there.
         </p>
 
-        <FieldRow label="Preferred date"><input style={inputStyle} placeholder="e.g. 12 Aug 2026" value={date} onChange={(e) => setDate(e.target.value)} /></FieldRow>
+        <FieldRow label="Preferred date"><DatePickerField value={date} onChange={setDate} /></FieldRow>
         <FieldRow label="Preferred time"><input style={inputStyle} placeholder="e.g. 3:00 PM" value={time} onChange={(e) => setTime(e.target.value)} /></FieldRow>
         <FieldRow label="Reason (optional)">
           <select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
@@ -2588,8 +2588,8 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
               </FieldRow>
               {[["warranty", "Warranty"], ["lastService", "Last serviced"]].map(([k, label]) => (
                 <FieldRow key={k} label={label}>
-                  <input style={inputStyle} value={d[k]} onChange={(e) => {
-                    const next = [...draft.devices]; next[i] = { ...next[i], [k]: e.target.value }; setDraft((p) => ({ ...p, devices: next }));
+                  <DatePickerField value={d[k]} onChange={(v) => {
+                    const next = [...draft.devices]; next[i] = { ...next[i], [k]: v }; setDraft((p) => ({ ...p, devices: next }));
                   }} />
                 </FieldRow>
               ))}
