@@ -110,6 +110,31 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "Cart is empty" });
       }
       for (const [id, qty] of entries) {
+        if (id === "lace") {
+          // LACE is priced exclusive of GST -- add 9% as its own line, same as the
+          // standalone "lace" checkout flow above.
+          const gst = Math.round(LACE_PRODUCT.price * GST_RATE * 100) / 100;
+          lineItems.push({
+            price_data: { currency: "sgd", product_data: { name: LACE_PRODUCT.name }, unit_amount: Math.round(LACE_PRODUCT.price * 100) },
+            quantity: qty,
+          });
+          lineItems.push({
+            price_data: { currency: "sgd", product_data: { name: "GST (9%) on " + LACE_PRODUCT.name }, unit_amount: Math.round(gst * 100) },
+            quantity: qty,
+          });
+          orderSummary.push({ name: LACE_PRODUCT.name, qty, price: LACE_PRODUCT.price });
+          orderSummary.push({ name: "GST on " + LACE_PRODUCT.name, qty, price: gst });
+          continue;
+        }
+        if (id === "dbfs") {
+          // DBFS is priced flat, GST-inclusive.
+          lineItems.push({
+            price_data: { currency: "sgd", product_data: { name: DBFS_PRODUCT.name }, unit_amount: Math.round(DBFS_PRODUCT.price * 100) },
+            quantity: qty,
+          });
+          orderSummary.push({ name: DBFS_PRODUCT.name, qty, price: DBFS_PRODUCT.price });
+          continue;
+        }
         const product = PRODUCTS[id];
         if (!product) continue;
         lineItems.push({

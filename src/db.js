@@ -150,7 +150,7 @@ export async function fetchPatientBundle(patientId) {
       id: d.id, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted, warranty: d.warranty, lastService: d.last_service,
     })),
     appointments: (apptsRes.data || []).map((a) => ({
-      id: a.id, type: a.type, date: a.appt_date, time: a.appt_time, clinic: a.clinic, status: a.status,
+      id: a.id, type: a.type, date: a.appt_date, time: a.appt_time, clinic: a.clinic, consultant: a.consultant || "", status: a.status,
     })),
     documents: (docsRes.data || []).map((d) => ({
       id: d.id, title: d.title, category: d.category, date: d.doc_date, url: d.url, isStoragePath: !!d.is_storage_path,
@@ -164,19 +164,28 @@ export async function fetchPatientBundle(patientId) {
 /* ---------------------------------------------------------
    QUESTIONNAIRES (patient's own -- read + write)
 --------------------------------------------------------- */
+// Returns { [questionnaireId]: { current: {...}, previous: {...} | null } } so the UI
+// can show the latest result and, on retake, compare it against the one before.
 export async function fetchQuestionnaireResponses(patientId) {
   const { data } = await supabase
     .from("questionnaire_responses")
     .select("*")
     .eq("patient_id", patientId)
     .order("completed_at", { ascending: false });
+  const toRecord = (r) => ({
+    score: r.score, maxScore: r.max_score, band: r.band, bandDetail: r.band_detail,
+    completedAt: r.completed_at, answers: r.answers,
+  });
   const byId = {};
   (data || []).forEach((r) => {
-    if (!byId[r.questionnaire_id]) {
-      byId[r.questionnaire_id] = { score: r.score, pct: r.pct, completedAt: r.completed_at, answers: r.answers };
-    }
+    if (!byId[r.questionnaire_id]) byId[r.questionnaire_id] = [];
+    byId[r.questionnaire_id].push(toRecord(r));
   });
-  return byId;
+  const result = {};
+  Object.keys(byId).forEach((id) => {
+    result[id] = { current: byId[id][0] || null, previous: byId[id][1] || null };
+  });
+  return result;
 }
 
 export async function saveQuestionnaireResponse(patientId, questionnaireId, record) {
@@ -184,7 +193,9 @@ export async function saveQuestionnaireResponse(patientId, questionnaireId, reco
     patient_id: patientId,
     questionnaire_id: questionnaireId,
     score: record.score,
-    pct: record.pct,
+    max_score: record.maxScore,
+    band: record.band,
+    band_detail: record.bandDetail,
     completed_at: record.completedAt,
     answers: record.answers,
   });
@@ -357,7 +368,7 @@ export async function saveAppointments(patientId, appointments) {
   const keepIds = appointments.filter((a) => isUuid(a.id)).map((a) => a.id);
   await supabase.from("appointments").delete().eq("patient_id", patientId).not("id", "in", `(${keepIds.length ? keepIds.join(",") : "00000000-0000-0000-0000-000000000000"})`);
   for (const a of appointments) {
-    const row = { patient_id: patientId, type: a.type, appt_date: a.date, appt_time: a.time, clinic: a.clinic, status: a.status };
+    const row = { patient_id: patientId, type: a.type, appt_date: a.date, appt_time: a.time, clinic: a.clinic, consultant: a.consultant, status: a.status };
     if (isUuid(a.id)) {
       await supabase.from("appointments").update(row).eq("id", a.id);
     } else {
