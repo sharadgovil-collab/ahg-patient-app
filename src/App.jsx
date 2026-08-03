@@ -2432,7 +2432,7 @@ function AdminPanel({ data, role, onSave, onClose }) {
               </div>
               <FieldRow label="Last name"><input style={inputStyle} value={draft.profile.lastName} onChange={(e) => setField("lastName", e.target.value)} /></FieldRow>
               <FieldRow label="Patient ID"><input style={inputStyle} value={draft.profile.id} onChange={(e) => setField("id", e.target.value)} /></FieldRow>
-              <FieldRow label="Date of birth"><input style={inputStyle} value={draft.profile.dob} onChange={(e) => setField("dob", e.target.value)} /></FieldRow>
+              <FieldRow label="Date of birth"><DatePickerField value={draft.profile.dob} onChange={(v) => setField("dob", v)} /></FieldRow>
               <FieldRow label="Gender">
                 <select style={inputStyle} value={draft.profile.gender} onChange={(e) => setField("gender", e.target.value)}>
                   <option value="">Not specified</option>
