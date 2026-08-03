@@ -2617,7 +2617,7 @@ function StaffPinGate({ onSuccess, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.6)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.6)", zIndex: 150, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 320, width: "100%", textAlign: "center" }}>
         <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
           <KeyRound size={20} color="#1E3A6D" />
@@ -3175,7 +3175,7 @@ export default function AmazingHearingApp() {
         <button
           onClick={() => setPinGateOpen(true)}
           style={{
-            position: "fixed", bottom: 20, right: 20, display: "flex", alignItems: "center", gap: 6,
+            position: "fixed", bottom: 20, right: 20, zIndex: 150, display: "flex", alignItems: "center", gap: 6,
             padding: "8px 12px", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff",
             color: "#8A96A3", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, cursor: "pointer",
           }}
