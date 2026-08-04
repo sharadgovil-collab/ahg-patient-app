@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -975,6 +975,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
   const next = appointments.find((a) => a.status === "upcoming");
   const [apptOpen, setApptOpen] = useState(false);
   const [clinicsOpen, setClinicsOpen] = useState(false);
+  const [promotionsOpen, setPromotionsOpen] = useState(false);
   const [promotions, setPromotions] = useState([]);
 
   useEffect(() => {
@@ -1025,32 +1026,6 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
         </Card>
       )}
 
-      {promotions.length > 0 && (
-        <div>
-          <SectionLabel>Promotions</SectionLabel>
-          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
-            {promotions.map((p) => (
-              <div
-                key={p.id} onClick={() => window.open(p.fileUrl, "_blank", "noreferrer")}
-                style={{
-                  flexShrink: 0, width: 160, borderRadius: 14, overflow: "hidden", cursor: "pointer",
-                  border: "1px solid #E3E7EE", background: "#fff",
-                }}
-              >
-                {p.fileType === "image" ? (
-                  <img src={p.fileUrl} alt={p.title} style={{ width: 160, height: 100, objectFit: "cover", display: "block" }} />
-                ) : (
-                  <div style={{ width: 160, height: 100, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <FileText size={26} color="#1E3A6D" />
-                  </div>
-                )}
-                <div style={{ padding: "8px 10px", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: "#1B2430" }}>{p.title}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div>
         <SectionLabel>Quick access</SectionLabel>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -1062,6 +1037,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
             { icon: ShoppingBag, label: "Shop", tab: "shop" },
             { icon: MapPin, label: "Our Clinics", onClick: () => setClinicsOpen(true) },
             { icon: Star, label: "Google Review", onClick: () => window.open(reviewLink, "_blank", "noreferrer") },
+            ...(promotions.length > 0 ? [{ icon: Megaphone, label: "Promotions", onClick: () => setPromotionsOpen(true) }] : []),
           ].map(({ icon: Icon, label, tab, onClick }) => (
             <Card key={label} onClick={onClick || (() => setTab(tab))} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1075,6 +1051,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
       {clinicsOpen && <ClinicsModal onClose={() => setClinicsOpen(false)} />}
+      {promotionsOpen && <PromotionsListModal promotions={promotions} onClose={() => setPromotionsOpen(false)} />}
 
       <Card style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
         <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#64707E", letterSpacing: "0.04em", textTransform: "uppercase" }}>
@@ -2116,6 +2093,35 @@ function ClinicsModal({ onClose }) {
   );
 }
 
+function PromotionsListModal({ promotions, onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <SectionLabel>Promotions</SectionLabel>
+          <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {promotions.map((p) => (
+            <Card key={p.id} onClick={() => window.open(p.fileUrl, "_blank", "noreferrer")} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                {p.fileType === "image" ? (
+                  <img src={p.fileUrl} alt={p.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <FileText size={20} color="#1E3A6D" />
+                )}
+              </div>
+              <div style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{p.title}</div>
+              <ChevronRight size={16} color="#8A96A3" />
+            </Card>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------------------------------------------------
    TABS: CARE (+ Documents: Reports & Invoices)
 --------------------------------------------------------- */
@@ -2358,6 +2364,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
       {clinicsOpen && <ClinicsModal onClose={() => setClinicsOpen(false)} />}
+      {promotionsOpen && <PromotionsListModal promotions={promotions} onClose={() => setPromotionsOpen(false)} />}
       {uploadOpen && (
         <UploadDocumentModal
           patientId={patientId}
