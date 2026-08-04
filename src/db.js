@@ -363,6 +363,26 @@ export async function getSignedFileUrl(bucket, path, expiresInSeconds = 3600) {
   return data.signedUrl;
 }
 
+// Removes every stored file for this patient (photos + documents), then deletes the
+// patient row. All clinical tables (audiograms, devices, appointments, documents,
+// datalog, questionnaire_responses, cognitive_results, sin_results) cascade-delete at
+// the database level, so this is the one call that needs to happen. Storage isn't
+// covered by that cascade, so we clear it out ourselves first, best-effort.
+// Note: this does not remove the person's underlying sign-in account -- if they ever
+// try to log back in, they'll simply start over as a brand-new patient.
+export async function deletePatient(patientId) {
+  for (const bucket of ["patient-photos", "patient-documents"]) {
+    try {
+      const { data: files } = await supabase.storage.from(bucket).list(patientId);
+      if (files && files.length) {
+        await supabase.storage.from(bucket).remove(files.map((f) => patientId + "/" + f.name));
+      }
+    } catch (e) { console.error("couldn't clear " + bucket + " for patient", e); }
+  }
+  const { error } = await supabase.from("patients").delete().eq("id", patientId);
+  if (error) throw error;
+}
+
 export async function savePhotoUrl(patientId, photoPath) {
   const { error } = await supabase
     .from("patients")

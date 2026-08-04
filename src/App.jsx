@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer, Download, Eye, LayoutGrid
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -831,7 +831,7 @@ function QuestionnaireResultCard({ result }) {
   );
 }
 
-function QuestionnaireRunner({ q, existingResult, onClose, onSave }) {
+function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = false }) {
   const questions = q.questions;
   const [mode, setMode] = useState(existingResult ? "view" : "quiz");
   const [idx, setIdx] = useState(0);
@@ -876,12 +876,21 @@ function QuestionnaireRunner({ q, existingResult, onClose, onSave }) {
           {"Completed " + formatDateDMY(existingResult.completedAt)}
         </div>
         <QuestionnaireResultCard result={existingResult} />
-        <button onClick={startRetake} style={{
-          width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
-          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
-        }}>
-          Retake this questionnaire
-        </button>
+        {readOnly ? (
+          <div style={{
+            width: "100%", padding: "13px 0", borderRadius: 12, background: "#F4F5F8", color: "#8A96A3",
+            textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5,
+          }}>
+            Previewing as patient -- retaking is disabled
+          </div>
+        ) : (
+          <button onClick={startRetake} style={{
+            width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
+            border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          }}>
+            Retake this questionnaire
+          </button>
+        )}
       </ModalShell>
     );
   }
@@ -1108,7 +1117,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
 /* ---------------------------------------------------------
    TABS: RESULTS (with audiogram history + comparison)
 --------------------------------------------------------- */
-function ResultsTab({ audiogramHistory, sin, patientId }) {
+function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
   const [sub, setSub] = useState("audiogram");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [compareIdx, setCompareIdx] = useState("");
@@ -1144,8 +1153,9 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {QUESTIONNAIRES.filter((q) => q.category === "hearing").map((q) => {
                 const rec = resolveQuestionnaireRecord(saved[q.id]?.current, q);
+                const locked = q.comingSoon || (readOnly && !rec);
                 return (
-                  <Card key={q.id} onClick={() => !q.comingSoon && setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12, opacity: q.comingSoon ? 0.55 : 1 }}>
+                  <Card key={q.id} onClick={() => !locked && setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12, opacity: locked ? 0.55 : 1 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: rec ? "#E3EBE2" : "#F0EFEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       {rec ? <Check size={16} color="#4C6349" /> : <ClipboardList size={16} color="#8A96A3" />}
                     </div>
@@ -1155,7 +1165,7 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
                         {q.comingSoon ? "Coming soon" : rec ? "Last completed " + formatDateDMY(rec.completedAt) + " . " + rec.band + (rec.maxScore ? " (" + rec.score + "/" + rec.maxScore + ")" : "") : q.questions.length + " items . " + q.desc}
                       </div>
                     </div>
-                    {!q.comingSoon && <ChevronRight size={16} color="#8A96A3" />}
+                    {!locked && <ChevronRight size={16} color="#8A96A3" />}
                   </Card>
                 );
               })}
@@ -1165,8 +1175,9 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {QUESTIONNAIRES.filter((q) => q.category === "tinnitus").map((q) => {
                 const rec = resolveQuestionnaireRecord(saved[q.id]?.current, q);
+                const locked = readOnly && !rec;
                 return (
-                  <Card key={q.id} onClick={() => setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <Card key={q.id} onClick={() => !locked && setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12, opacity: locked ? 0.55 : 1 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: rec ? "#E3EBE2" : "#F0EFEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       {rec ? <Check size={16} color="#4C6349" /> : <ClipboardList size={16} color="#8A96A3" />}
                     </div>
@@ -1187,6 +1198,7 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
             <QuestionnaireRunner
               q={active.q}
               existingResult={active.existingResult}
+              readOnly={readOnly}
               onClose={() => setActive(null)}
               onSave={(record) => { save(active.q.id, record); setActive(null); }}
             />
@@ -2259,7 +2271,7 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
   );
 }
 
-function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged }) {
+function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, readOnly = false }) {
   const [openGuide, setOpenGuide] = useState(null);
   const [docCategory, setDocCategory] = useState("All");
   const [apptOpen, setApptOpen] = useState(false);
@@ -2373,13 +2385,15 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
             </Card>
           ))}
         </div>
-        <button onClick={() => setUploadOpen(true)} style={{
-          marginTop: 10, width: "100%", padding: "12px 0", borderRadius: 12, border: "1px dashed #C7CDD8",
-          background: "transparent", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13,
-          color: "#1E3A6D", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-        }}>
-          <Upload size={14} /> Upload a document
-        </button>
+        {!readOnly && (
+          <button onClick={() => setUploadOpen(true)} style={{
+            marginTop: 10, width: "100%", padding: "12px 0", borderRadius: 12, border: "1px dashed #C7CDD8",
+            background: "transparent", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13,
+            color: "#1E3A6D", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          }}>
+            <Upload size={14} /> Upload a document
+          </button>
+        )}
       </div>
 
       <div>
@@ -2408,7 +2422,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
       </div>
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
-      {uploadOpen && (
+      {!readOnly && uploadOpen && (
         <UploadDocumentModal
           patientId={patientId}
           onClose={() => setUploadOpen(false)}
@@ -2422,7 +2436,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
 /* ---------------------------------------------------------
    TABS: FORMS
 --------------------------------------------------------- */
-function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProfile }) {
+function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProfile, readOnly = false }) {
   const [expanded, setExpanded] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -2485,26 +2499,30 @@ function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProf
                 <User size={24} color="#1E3A6D" />
               )}
             </div>
-            <label style={{
-              position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: "50%",
-              background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center",
-              cursor: "pointer", border: "2px solid #fff",
-            }}>
-              <Camera size={11} color="#fff" />
-              <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: "none" }} disabled={photoBusy} />
-            </label>
+            {!readOnly && (
+              <label style={{
+                position: "absolute", bottom: -2, right: -2, width: 22, height: 22, borderRadius: "50%",
+                background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", border: "2px solid #fff",
+              }}>
+                <Camera size={11} color="#fff" />
+                <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: "none" }} disabled={photoBusy} />
+              </label>
+            )}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 500, color: "#1B2430" }}>{profile.firstName + " " + profile.lastName}</div>
             <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3" }}>{profile.id}</div>
           </div>
-          <button onClick={onEditProfile} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 10,
-            border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif",
-            fontWeight: 600, fontSize: 12, color: "#1E3A6D", cursor: "pointer", flexShrink: 0,
-          }}>
-            <Pencil size={12} /> Edit
-          </button>
+          {!readOnly && (
+            <button onClick={onEditProfile} style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 10,
+              border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif",
+              fontWeight: 600, fontSize: 12, color: "#1E3A6D", cursor: "pointer", flexShrink: 0,
+            }}>
+              <Pencil size={12} /> Edit
+            </button>
+          )}
         </div>
         {photoBusy && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginBottom: 8 }}>Uploading photo...</div>}
         {photoError && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#C4573F", marginBottom: 8 }}>{photoError}</div>}
@@ -2544,9 +2562,9 @@ function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProf
         display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         width: "100%", padding: "12px 0", borderRadius: 12, border: "1px solid #E3E7EE",
         background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13,
-        color: "#C4573F", cursor: "pointer",
+        color: readOnly ? "#1E3A6D" : "#C4573F", cursor: "pointer",
       }}>
-        <LogOut size={15} /> Log out
+        {readOnly ? <><Eye size={15} /> Exit preview</> : <><LogOut size={15} /> Log out</>}
       </button>
     </div>
   );
@@ -2612,6 +2630,119 @@ function EditProfileModal({ profile, onSave, onClose }) {
   );
 }
 
+/* ---------------------------------------------------------
+   STAFF: "VIEW AS PATIENT" -- reuses the real patient-facing tabs so
+   staff see exactly what the patient sees. Fully read-only: no writes
+   ever leave this component (checkout, uploads, edits, and retakes are
+   all disabled at the tab level via the readOnly prop).
+--------------------------------------------------------- */
+function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
+  const [tab, setTab] = useState("home");
+  const [cart, setCart] = useState({});
+  const [blockedMsg, setBlockedMsg] = useState("");
+  const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
+  const { profile, audiogramHistory, sin, devices, appointments, documents, datalog } = bundle;
+
+  const blockCheckout = () => {
+    setBlockedMsg("This is a preview -- checkout is disabled here.");
+    setTimeout(() => setBlockedMsg(""), 2200);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.7)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{
+        width: "100%", maxWidth: 390, height: 780, background: "#F4F5F8",
+        borderRadius: 34, border: "8px solid #1E3A6D", boxShadow: "0 24px 60px rgba(27,36,48,0.4)",
+        display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
+      }}>
+        <div style={{
+          padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "#1E3A6D", flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: "#fff" }}>
+            <Eye size={13} /> {"Previewing " + patientName}
+          </div>
+          <button onClick={onExit} style={{
+            display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.35)", background: "rgba(255,255,255,0.12)",
+            color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11, cursor: "pointer",
+          }}>
+            <X size={12} /> Exit
+          </button>
+        </div>
+
+        <div style={{
+          padding: "16px 20px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+          borderBottom: "1px solid #E3E7EE", background: "#F4F5F8",
+        }}>
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 40, width: "auto", objectFit: "contain" }} />
+          <div style={{ position: "relative", cursor: "pointer" }} onClick={() => cartCount > 0 && blockCheckout()}>
+            <ShoppingBag size={18} color="#64707E" />
+            {cartCount > 0 && (
+              <span style={{
+                position: "absolute", top: -6, right: -7, background: "#E8631E", color: "#fff",
+                fontSize: 9, fontWeight: 700, borderRadius: 999, minWidth: 15, height: 15,
+                display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'IBM Plex Mono', monospace",
+              }}>
+                {cartCount}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
+          {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => {}} />}
+          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: [0, 0, 0, 0, 0, 0], left: [0, 0, 0, 0, 0, 0] }]} sin={sin} patientId={patientId} readOnly />}
+          {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
+          {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
+          {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={blockCheckout} />}
+          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={() => {}} readOnly />}
+          {tab === "forms" && <ProfileTab profile={profile} patientId={patientId} onLogout={onExit} onProfileUpdated={() => {}} onEditProfile={() => {}} readOnly />}
+        </div>
+
+        {blockedMsg && (
+          <div style={{
+            position: "absolute", bottom: 86, left: 16, right: 16, background: "#1B2430", color: "#fff",
+            padding: "10px 14px", borderRadius: 10, fontFamily: "'Inter', sans-serif", fontSize: 12, textAlign: "center", zIndex: 5,
+          }}>
+            {blockedMsg}
+          </div>
+        )}
+
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, background: "#FFFFFF",
+          borderTop: "1px solid #E3E7EE", display: "flex", padding: "10px 2px 16px",
+        }}>
+          {[
+            { key: "home", label: "Home", icon: Home },
+            { key: "results", label: "Hearing", icon: Activity },
+            { key: "train", label: "Cognitive", icon: Brain },
+            { key: "device", label: "Device", icon: Ear },
+            { key: "shop", label: "Shop", icon: ShoppingBag },
+            { key: "care", label: "Care", icon: MessageCircle },
+            { key: "forms", label: "Profile", icon: User },
+          ].map(({ key, label, icon: Icon }) => {
+            const isActive = tab === key;
+            return (
+              <div key={key} onClick={() => setTab(key)} style={{
+                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, cursor: "pointer",
+              }}>
+                <Icon size={18} color={isActive ? "#1E3A6D" : "#B0B8C4"} strokeWidth={isActive ? 2.4 : 2} />
+                <span style={{
+                  fontSize: 9.5, fontFamily: "'Inter', sans-serif", fontWeight: isActive ? 700 : 500,
+                  color: isActive ? "#1E3A6D" : "#B0B8C4",
+                }}>
+                  {label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ADMIN_SECTIONS = [
   { key: "profile", label: "Profile" },
   { key: "audiogramHistory", label: "Audiograms" },
@@ -2653,36 +2784,65 @@ function decodeQuestionnaireAnswers(questionnaireId, answers) {
   });
 }
 
-function printQuestionnaireResult(patientName, q, record) {
+// Builds a real, downloadable PDF file (jsPDF, lazy-loaded so it never bloats the
+// main bundle) instead of relying on the browser's print dialog -- "Save as PDF" via
+// print is unreliable on mobile, especially inside an installed/standalone PWA where
+// there may be no print UI at all. doc.save() triggers a direct file download everywhere.
+async function exportQuestionnairePDF(patientName, q, record) {
+  const { jsPDF } = await import("jspdf");
   const rows = decodeQuestionnaireAnswers(q.id, record.answers);
-  const win = window.open("", "_blank");
-  if (!win) return;
-  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  win.document.write(
-    "<html><head><title>" + esc(q.short + " -- " + patientName) + "</title><style>" +
-    "body{font-family:Arial,Helvetica,sans-serif;color:#1B2430;padding:32px;max-width:720px;margin:0 auto;}" +
-    "h1{font-size:19px;margin:0 0 2px;}" +
-    ".sub{color:#64707E;font-size:12.5px;margin-bottom:20px;}" +
-    ".summary{display:flex;gap:28px;padding:14px 18px;background:#F4F5F8;border-radius:10px;margin-bottom:22px;}" +
-    ".summary .num{font-size:22px;font-weight:700;color:#1E3A6D;display:block;}" +
-    ".summary .lbl{font-size:11.5px;color:#64707E;}" +
-    "table{width:100%;border-collapse:collapse;font-size:12.5px;}" +
-    "td{padding:9px 6px;border-bottom:1px solid #E3E7EE;vertical-align:top;}" +
-    "td.q{width:64%;}" + "td.a{font-weight:600;}" +
-    "@media print{body{padding:0;}}" +
-    "</style></head><body>" +
-    "<h1>" + esc(q.name) + " (" + esc(q.short) + ")</h1>" +
-    "<div class=\"sub\">" + esc(patientName) + " &middot; Completed " + esc(formatDateDMY(record.completedAt)) + "</div>" +
-    "<div class=\"summary\">" +
-    "<div><span class=\"num\">" + esc(record.score) + (record.maxScore ? " / " + esc(record.maxScore) : "") + "</span><span class=\"lbl\">Score</span></div>" +
-    "<div><span class=\"num\" style=\"font-size:15px\">" + esc(record.band || "") + "</span><span class=\"lbl\">" + esc(record.bandDetail || "") + "</span></div>" +
-    "</div>" +
-    "<table>" + rows.map((r, i) => "<tr><td class=\"q\">" + (i + 1) + ". " + esc(r.question) + "</td><td class=\"a\">" + esc(r.answer) + "</td></tr>").join("") + "</table>" +
-    "</body></html>"
-  );
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); }, 300);
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const marginX = 42;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const colQWidth = pageWidth - marginX * 2 - 130;
+  let y = 56;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(27, 36, 48);
+  doc.text(q.name + " (" + q.short + ")", marginX, y);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text(patientName + "  \u00b7  Completed " + formatDateDMY(record.completedAt), marginX, y);
+  y += 22;
+
+  doc.setFillColor(244, 245, 248);
+  doc.roundedRect(marginX, y, pageWidth - marginX * 2, 46, 6, 6, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(30, 58, 109);
+  doc.text(String(record.score) + (record.maxScore ? " / " + record.maxScore : ""), marginX + 14, y + 20);
+  doc.setFontSize(12);
+  doc.text(String(record.band || ""), marginX + 150, y + 20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text(doc.splitTextToSize(record.bandDetail || "", pageWidth - marginX * 2 - 164), marginX + 150, y + 34);
+  y += 70;
+
+  doc.setDrawColor(227, 231, 238);
+  rows.forEach((r, i) => {
+    const qLines = doc.splitTextToSize((i + 1) + ". " + r.question, colQWidth);
+    const aLines = doc.splitTextToSize(r.answer, 110);
+    const rowH = Math.max(qLines.length, aLines.length) * 12 + 10;
+    if (y + rowH > pageHeight - 40) { doc.addPage(); y = 48; }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(27, 36, 48);
+    doc.text(qLines, marginX, y);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(30, 58, 109);
+    doc.text(aLines, marginX + colQWidth + 20, y);
+    y += rowH;
+    doc.line(marginX, y - 6, pageWidth - marginX, y - 6);
+  });
+
+  const safeName = patientName.replace(/[^a-z0-9]+/gi, "_");
+  doc.save(q.short + "_" + safeName + ".pdf");
 }
 
 function QuestionnaireHistoryCard({ patientName, record }) {
@@ -2708,9 +2868,9 @@ function QuestionnaireHistoryCard({ patientName, record }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           {q && (
-            <Printer
+            <Download
               size={16} color="#64707E" style={{ cursor: "pointer" }}
-              onClick={() => printQuestionnaireResult(patientName, q, record)}
+              onClick={() => exportQuestionnairePDF(patientName, q, record)}
             />
           )}
           {open ? (
@@ -2750,7 +2910,7 @@ function QuestionnaireHistorySection({ patientName, questionnaires }) {
   return (
     <>
       <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginBottom: 12 }}>
-        Tap a questionnaire to see exactly what the patient answered, question by question. Use the printer icon to save a copy as a PDF.
+        Tap a questionnaire to see exactly what the patient answered, question by question. Use the download icon to save a copy as a PDF.
       </div>
       {questionnaires.map((r) => (
         <QuestionnaireHistoryCard key={r.id} patientName={patientName} record={r} />
@@ -2759,13 +2919,73 @@ function QuestionnaireHistorySection({ patientName, questionnaires }) {
   );
 }
 
-function AdminPanel({ data, patientId, role, onSave, onClose }) {
+function DeletePatientModal({ patientId, patientName, onClose, onDeleted }) {
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const canConfirm = confirmText.trim().toLowerCase() === patientName.trim().toLowerCase();
+
+  const handleDelete = async () => {
+    if (!canConfirm || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await db.deletePatient(patientId);
+      onDeleted();
+    } catch (e) {
+      setError(e.message || "Couldn't delete this patient -- please try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.65)", zIndex: 65, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 360, borderRadius: 20, padding: 24 }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#FCEEE9", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+          <Trash2 size={20} color="#C4573F" />
+        </div>
+        <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 18, color: "#1B2430", marginBottom: 6 }}>Delete {patientName}?</div>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, marginBottom: 16 }}>
+          This permanently removes their profile, test results, devices, appointments, documents, and questionnaire history. This cannot be undone.
+        </div>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1B2430", marginBottom: 6 }}>
+          Type <strong>{patientName}</strong> to confirm
+        </div>
+        <input
+          style={inputStyle} value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+          placeholder={patientName} autoFocus
+        />
+        {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginTop: 8 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <button onClick={onClose} style={{
+            flex: 1, padding: "12px 0", borderRadius: 12, border: "1px solid #E3E7EE", background: "#fff",
+            color: "#1B2430", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer",
+          }}>
+            Cancel
+          </button>
+          <button onClick={handleDelete} disabled={!canConfirm || busy} style={{
+            flex: 1, padding: "12px 0", borderRadius: 12, border: "none",
+            background: canConfirm ? "#C4573F" : "#F0C9BE", color: "#fff",
+            fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: canConfirm ? "pointer" : "not-allowed",
+          }}>
+            {busy ? "Deleting..." : "Delete permanently"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const sections = ADMIN_SECTIONS;
   const canDelete = role === "super_admin";
   const [section, setSection] = useState(sections[0].key);
   const [draft, setDraft] = useState(data);
   const [savedFlash, setSavedFlash] = useState("");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const patientName = ((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient";
 
   useEffect(() => { setDraft(data); }, [section]);
 
@@ -2793,7 +3013,15 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
               <Settings size={16} color="#1E3A6D" />
               <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 17, color: "#1B2430" }}>Staff Admin</span>
             </div>
-            <X size={20} color="#64707E" style={{ cursor: "pointer" }} onClick={onClose} />
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div onClick={() => setPreviewOpen(true)} style={{
+                display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
+                fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, color: "#1E3A6D",
+              }}>
+                <Eye size={14} /> View as patient
+              </div>
+              <X size={20} color="#64707E" style={{ cursor: "pointer" }} onClick={onClose} />
+            </div>
           </div>
           <div style={{ display: "flex", gap: 6, overflowX: "auto" }}>
             {sections.map((s) => (
@@ -2871,6 +3099,22 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
                 </select>
               </FieldRow>
               <FieldRow label="Audiologist"><input style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)} /></FieldRow>
+
+              {canDelete && (
+                <div style={{ marginTop: 28, paddingTop: 18, borderTop: "1px solid #F0EFEA" }}>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#C4573F", marginBottom: 10 }}>DANGER ZONE</div>
+                  <button onClick={() => setDeleteOpen(true)} style={{
+                    width: "100%", padding: "12px 0", borderRadius: 12, border: "1px solid #F0C9BE",
+                    background: "#FCEEE9", color: "#C4573F", fontFamily: "'Inter', sans-serif", fontWeight: 700,
+                    fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}>
+                    <Trash2 size={15} /> Delete this patient
+                  </button>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", marginTop: 8, lineHeight: 1.5 }}>
+                    Permanently removes this patient's profile, test results, devices, appointments, documents, and questionnaire history. This cannot be undone.
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -3160,6 +3404,25 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
           </div>
         )}
       </div>
+
+      {previewOpen && (
+        <PatientPreviewShell
+          bundle={draft}
+          patientId={patientId}
+          patientName={patientName}
+          onExit={() => setPreviewOpen(false)}
+        />
+      )}
+
+      {deleteOpen && (
+        <DeletePatientModal
+          patientId={patientId}
+          patientName={patientName}
+          bundle={draft}
+          onClose={() => setDeleteOpen(false)}
+          onDeleted={() => { setDeleteOpen(false); onDeleted && onDeleted(); }}
+        />
+      )}
     </div>
   );
 }
@@ -3587,7 +3850,11 @@ function StaffView({ staffRecord, onLogout }) {
 
       {addOpen && <AddPatientModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />}
       {editing && (
-        <AdminPanel data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "admin"} onSave={handleSave} onClose={() => setEditing(null)} />
+        <AdminPanel
+          data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "admin"}
+          onSave={handleSave} onClose={() => setEditing(null)}
+          onDeleted={() => { setEditing(null); load(); }}
+        />
       )}
     </div>
   );
