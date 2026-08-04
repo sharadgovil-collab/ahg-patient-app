@@ -2368,8 +2368,6 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
       </div>
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
-      {clinicsOpen && <ClinicsModal onClose={() => setClinicsOpen(false)} />}
-      {promotionsOpen && <PromotionsListModal promotions={promotions} onClose={() => setPromotionsOpen(false)} />}
       {uploadOpen && (
         <UploadDocumentModal
           patientId={patientId}
