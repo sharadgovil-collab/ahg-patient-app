@@ -55,7 +55,6 @@ const SOCIAL_LINKS = [
 // Fallback used until real per-clinic "leave a review" links are supplied.
 const GOOGLE_REVIEW_LINKS = {};
 const GOOGLE_REVIEW_FALLBACK = "https://www.google.com/search?q=Amazing+Hearing+Singapore+reviews";
-const STAFF_LOGIN_EMAIL = "staff-access@amazinghearing.com"; // internal account behind the staff PIN
 const TARGET_WEAR_HOURS = 12;
 const GST_RATE = 0.09;
 
@@ -2976,7 +2975,7 @@ function StaffPinGate({ onSuccess, onClose }) {
           <KeyRound size={20} color="#1E3A6D" />
         </div>
         <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", margin: "0 0 4px" }}>Staff access</h3>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter the staff PIN to view and edit patient records.</p>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter your PIN to view and edit patient records.</p>
         <input
           type="password" value={pin} onChange={(e) => { setPin(e.target.value); setError(false); }}
           onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -3056,7 +3055,7 @@ function StaffView({ staffRecord, onLogout }) {
         {staffRecord && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>
             <span>{staffRecord.firstName + " " + staffRecord.lastName + " . " + staffRecord.clinicName}</span>
-            <Pill tone={staffRecord.role === "super_admin" ? "accent" : "primary"}>{staffRecord.role === "super_admin" ? "Super Admin" : "Staff"}</Pill>
+            <Pill tone={staffRecord.role === "super_admin" ? "accent" : "primary"}>{staffRecord.role === "super_admin" ? "Super Admin" : "Admin"}</Pill>
           </div>
         )}
 
@@ -3109,7 +3108,7 @@ function StaffView({ staffRecord, onLogout }) {
 
       {addOpen && <AddPatientModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />}
       {editing && (
-        <AdminPanel data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "staff"} onSave={handleSave} onClose={() => setEditing(null)} />
+        <AdminPanel data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "admin"} onSave={handleSave} onClose={() => setEditing(null)} />
       )}
     </div>
   );

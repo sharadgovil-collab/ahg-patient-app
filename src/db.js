@@ -1,6 +1,7 @@
 import { supabase } from "./supabaseClient.js";
 
-const STAFF_LOGIN_EMAIL = "staff-access@amazinghearing.com"; // internal account behind the staff PIN
+const ADMIN_LOGIN_EMAIL = "staff-access@amazinghearing.com"; // internal account behind the Admin PIN
+const SUPER_ADMIN_LOGIN_EMAIL = "staff-superadmin@amazinghearing.com"; // internal account behind the Super Admin PIN
 
 /* ---------------------------------------------------------
    AUTH
@@ -54,12 +55,19 @@ export async function fetchStaffRecord(userId) {
 }
 
 export async function signInStaffWithPin(pin) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: STAFF_LOGIN_EMAIL,
+  // Try Super Admin first, then Admin -- the PIN itself determines which role logs in.
+  const attempt = await supabase.auth.signInWithPassword({
+    email: SUPER_ADMIN_LOGIN_EMAIL,
     password: pin,
   });
-  if (error) throw new Error("Incorrect PIN");
-  return data.user;
+  if (!attempt.error) return attempt.data.user;
+
+  const fallback = await supabase.auth.signInWithPassword({
+    email: ADMIN_LOGIN_EMAIL,
+    password: pin,
+  });
+  if (fallback.error) throw new Error("Incorrect PIN");
+  return fallback.data.user;
 }
 
 /* ---------------------------------------------------------
