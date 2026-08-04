@@ -53,7 +53,15 @@ const SOCIAL_LINKS = [
   { label: "LinkedIn", icon: "Linkedin", url: "https://sg.linkedin.com/company/amazing-hearing-group" },
 ];
 // Fallback used until real per-clinic "leave a review" links are supplied.
-const GOOGLE_REVIEW_LINKS = {};
+const GOOGLE_REVIEW_LINKS = {
+  "Bedok": "https://g.page/r/CYVECewOJ5zvEBM/review",
+  "Chinatown": "https://g.page/r/CbO-KiY0opgBEBM/review",
+  "Jurong": "https://g.page/r/CUJdrZ75n3BQEBM/review",
+  "Novena": "https://g.page/r/CQ1xl9RKQ74sEBM/review",
+  "Orchard": "https://g.page/r/CZSKlKZ88hQuEBM/review",
+  "Paya Lebar": "https://g.page/r/CbO-KiY0opgBEBM/review",
+  "Serangoon (Nex)": "https://g.page/r/CZhrVxOORC9GEBM/review",
+};
 const GOOGLE_REVIEW_FALLBACK = "https://www.google.com/search?q=Amazing+Hearing+Singapore+reviews";
 const TARGET_WEAR_HOURS = 12;
 const GST_RATE = 0.09;
