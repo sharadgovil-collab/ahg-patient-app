@@ -509,15 +509,46 @@ function formatDateDMY(value) {
   return m[3] + "/" + m[2] + "/" + m[1];
 }
 
+function calcPTA(thresholds) {
+  // Standard 4-frequency Pure Tone Average: 500Hz, 1kHz, 2kHz, 4kHz -- indices 1-4 in AUDIOGRAM_FREQS.
+  if (!thresholds) return null;
+  const vals = [thresholds[1], thresholds[2], thresholds[3], thresholds[4]];
+  if (vals.some((v) => v === undefined || v === null || v === "" || isNaN(v))) return null;
+  const avg = (Number(vals[0]) + Number(vals[1]) + Number(vals[2]) + Number(vals[3])) / 4;
+  return Math.round(avg);
+}
+
 function hearingDegree(thresholds) {
-  // Standard 4-frequency PTA: 500Hz, 1kHz, 2kHz, 4kHz -- indices 1-4 in AUDIOGRAM_FREQS.
-  const pta = (thresholds[1] + thresholds[2] + thresholds[3] + thresholds[4]) / 4;
-  if (pta <= 25) return "Normal hearing";
-  if (pta <= 40) return "Mild hearing loss";
-  if (pta <= 55) return "Moderate hearing loss";
-  if (pta <= 70) return "Moderately severe hearing loss";
-  if (pta <= 90) return "Severe hearing loss";
-  return "Profound hearing loss";
+  const pta = calcPTA(thresholds);
+  if (pta === null) return "--";
+  if (pta <= 15) return "Normal Hearing";
+  if (pta <= 25) return "Slight Hearing Loss";
+  if (pta <= 40) return "Mild Hearing Loss";
+  if (pta <= 55) return "Moderate Hearing Loss";
+  if (pta <= 70) return "Moderately Severe Hearing Loss";
+  if (pta <= 90) return "Severe Hearing Loss";
+  return "Profound Hearing Loss";
+}
+
+function hearingDifficulty(degree) {
+  switch (degree) {
+    case "Normal Hearing":
+      return "No difficulty hearing typical conversation, even in quiet settings.";
+    case "Slight Hearing Loss":
+      return "May have difficulty hearing faint or distant speech, especially in background noise.";
+    case "Mild Hearing Loss":
+      return "Difficulty following conversation in noisy environments and may need to ask people to repeat themselves.";
+    case "Moderate Hearing Loss":
+      return "Difficulty following conversation without hearing aids, especially in groups or with background noise.";
+    case "Moderately Severe Hearing Loss":
+      return "Considerable difficulty with everyday conversation without amplification; hearing aids are typically needed.";
+    case "Severe Hearing Loss":
+      return "Little to no ability to hear conversational speech without hearing aids; relies heavily on visual cues like lip-reading.";
+    case "Profound Hearing Loss":
+      return "Unable to hear conversational speech reliably; may rely on powerful amplification, cochlear implants, or sign language.";
+    default:
+      return "Your audiologist will walk through what this means for you at your next review.";
+  }
 }
 
 function sinCategory(dbLoss) {
@@ -1150,14 +1181,21 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 12, paddingTop: 12, borderTop: "1px solid #F0EFEA", fontFamily: "'Inter', sans-serif", fontSize: 12.5 }}>
-              <div><span style={{ color: "#8A96A3" }}>Right Ear: </span><span style={{ color: "#1B2430", fontWeight: 600 }}>{hearingDegree(primary.right)}</span></div>
-              <div><span style={{ color: "#8A96A3" }}>Left Ear: </span><span style={{ color: "#1B2430", fontWeight: 600 }}>{hearingDegree(primary.left)}</span></div>
+              <div><span style={{ color: "#8A96A3" }}>Right Ear: </span><span style={{ color: "#1B2430", fontWeight: 600 }}>{calcPTA(primary.right) !== null ? calcPTA(primary.right) + "dBHL - " + hearingDegree(primary.right) : "--"}</span></div>
+              <div><span style={{ color: "#8A96A3" }}>Left Ear: </span><span style={{ color: "#1B2430", fontWeight: 600 }}>{calcPTA(primary.left) !== null ? calcPTA(primary.left) + "dBHL - " + hearingDegree(primary.left) : "--"}</span></div>
             </div>
           </Card>
           <Card>
             <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430", marginBottom: 8 }}>What this means</div>
             <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6 }}>
-              Your hearing test shows a pattern common with age-related hearing loss. Your audiologist will walk through what this means for you at your next review.
+              {hearingDegree(primary.right) === hearingDegree(primary.left) ? (
+                <p style={{ margin: 0 }}>{hearingDifficulty(hearingDegree(primary.right))}</p>
+              ) : (
+                <>
+                  <p style={{ margin: "0 0 10px" }}><strong style={{ color: "#1B2430" }}>Right Ear ({hearingDegree(primary.right)}):</strong> {hearingDifficulty(hearingDegree(primary.right))}</p>
+                  <p style={{ margin: 0 }}><strong style={{ color: "#1B2430" }}>Left Ear ({hearingDegree(primary.left)}):</strong> {hearingDifficulty(hearingDegree(primary.left))}</p>
+                </>
+              )}
             </div>
           </Card>
         </>
