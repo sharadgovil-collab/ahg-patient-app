@@ -3758,12 +3758,6 @@ function StaffView({ staffRecord, onLogout }) {
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 34 }} />
-          <button onClick={onLogout} style={{
-            display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 10, border: "1px solid #E3E7EE",
-            background: "#fff", color: "#C4573F", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
-          }}>
-            <LogOut size={13} /> Log out
-          </button>
         </div>
 
         {staffRecord && (
@@ -3856,6 +3850,15 @@ function StaffView({ staffRecord, onLogout }) {
           onDeleted={() => { setEditing(null); load(); }}
         />
       )}
+
+      <button onClick={onLogout} style={{
+        position: "fixed", bottom: 20, right: 20, zIndex: 150, display: "flex", alignItems: "center", gap: 6,
+        padding: "12px 18px", borderRadius: 999, border: "1px solid #F0C9BE", background: "#fff",
+        color: "#C4573F", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer",
+        boxShadow: "0 6px 18px rgba(27,36,48,0.18)",
+      }}>
+        <LogOut size={15} /> Log out
+      </button>
     </div>
   );
 }
