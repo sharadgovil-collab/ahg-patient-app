@@ -974,6 +974,14 @@ const SOCIAL_ICON_COMPONENTS = { Instagram, Facebook, Linkedin };
 function HomeTab({ setTab, profile, appointments, onEditProfile }) {
   const next = appointments.find((a) => a.status === "upcoming");
   const [apptOpen, setApptOpen] = useState(false);
+  const [promotions, setPromotions] = useState([]);
+
+  useEffect(() => {
+    db.fetchPromotions().then((rows) => {
+      const today = new Date().toISOString().slice(0, 10);
+      setPromotions(rows.filter((p) => !p.expiresAt || p.expiresAt >= today));
+    }).catch((e) => console.error(e));
+  }, []);
 
   const age = calcAge(profile.dob);
   const genderAbbrev = profile.gender === "Male" ? "M" : profile.gender === "Female" ? "F" : "";
@@ -1014,6 +1022,32 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
             <Calendar size={20} style={{ opacity: 0.8 }} />
           </div>
         </Card>
+      )}
+
+      {promotions.length > 0 && (
+        <div>
+          <SectionLabel>Promotions</SectionLabel>
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
+            {promotions.map((p) => (
+              <div
+                key={p.id} onClick={() => window.open(p.fileUrl, "_blank", "noreferrer")}
+                style={{
+                  flexShrink: 0, width: 160, borderRadius: 14, overflow: "hidden", cursor: "pointer",
+                  border: "1px solid #E3E7EE", background: "#fff",
+                }}
+              >
+                {p.fileType === "image" ? (
+                  <img src={p.fileUrl} alt={p.title} style={{ width: 160, height: 100, objectFit: "cover", display: "block" }} />
+                ) : (
+                  <div style={{ width: 160, height: 100, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <FileText size={26} color="#1E3A6D" />
+                  </div>
+                )}
+                <div style={{ padding: "8px 10px", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, color: "#1B2430" }}>{p.title}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div>
@@ -2574,7 +2608,12 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
               <FieldRow label="Medical referral doctor (if any)"><input style={inputStyle} value={draft.profile.referralDoctorName} onChange={(e) => setField("referralDoctorName", e.target.value)} /></FieldRow>
 
               <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3", marginBottom: 6, marginTop: 14 }}>CLINIC-MANAGED</div>
-              <FieldRow label="Home clinic"><input style={inputStyle} value={draft.profile.clinic} onChange={(e) => setField("clinic", e.target.value)} /></FieldRow>
+              <FieldRow label="Home clinic">
+                <select style={inputStyle} value={draft.profile.clinic} onChange={(e) => setField("clinic", e.target.value)}>
+                  <option value=""></option>
+                  {CLINICS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </FieldRow>
               <FieldRow label="Audiologist"><input style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)} /></FieldRow>
               <FieldRow label="Clinic contact number (used for WhatsApp/Call buttons)"><input style={inputStyle} value={draft.profile.clinicPhone} onChange={(e) => setField("clinicPhone", e.target.value)} /></FieldRow>
             </>
@@ -3117,12 +3156,28 @@ function StaffPinGate({ onSuccess, onClose }) {
   );
 }
 
+function daysAgoLabel(isoTimestamp) {
+  if (!isoTimestamp) return "Never active";
+  const d = new Date(isoTimestamp);
+  if (isNaN(d.getTime())) return "Never active";
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return "Active today";
+  if (days === 1) return "Active yesterday";
+  if (days < 30) return "Active " + days + " days ago";
+  const months = Math.floor(days / 30);
+  if (months < 12) return "Active " + months + (months === 1 ? " month ago" : " months ago");
+  const years = Math.floor(months / 12);
+  return "Active " + years + (years === 1 ? " year ago" : " years ago");
+}
+
 function StaffView({ staffRecord, onLogout }) {
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState(null); // { id, bundle }
+  const [sortMode, setSortMode] = useState("newest");
+  const [section, setSection] = useState("patients");
 
   const load = async () => {
     setLoading(true);
@@ -3154,13 +3209,22 @@ function StaffView({ staffRecord, onLogout }) {
   };
 
   const q = search.toLowerCase();
-  const shown = patients.filter((p) =>
+  const filtered = patients.filter((p) =>
     !q ||
     (p.first_name || "").toLowerCase().includes(q) ||
     (p.last_name || "").toLowerCase().includes(q) ||
     (p.email || "").toLowerCase().includes(q) ||
     (p.patient_code || "").toLowerCase().includes(q)
   );
+  const shown = [...filtered].sort((a, b) => {
+    if (sortMode === "dormant") {
+      return (a.last_active_at ? new Date(a.last_active_at).getTime() : -Infinity) - (b.last_active_at ? new Date(b.last_active_at).getTime() : -Infinity);
+    }
+    if (sortMode === "active") {
+      return (b.last_active_at ? new Date(b.last_active_at).getTime() : -Infinity) - (a.last_active_at ? new Date(a.last_active_at).getTime() : -Infinity);
+    }
+    return 0; // "newest" -- keep server order (created_at desc)
+  });
 
   return (
     <div style={{ minHeight: "100vh", background: "#E8EAEF", fontFamily: "'Inter', sans-serif", padding: "24px 16px" }}>
@@ -3182,57 +3246,220 @@ function StaffView({ staffRecord, onLogout }) {
           </div>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div>
-            <SectionLabel>Staff</SectionLabel>
-            <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Patients</h2>
-          </div>
-          <button onClick={() => setAddOpen(true)} style={{
-            padding: "10px 16px", borderRadius: 12, background: "#E8631E", color: "#fff", border: "none",
-            fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer",
-          }}>
-            + New patient
-          </button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {[["patients", "Patients"], ["promotions", "Promotions"]].map(([key, label]) => (
+            <button key={key} onClick={() => setSection(key)} style={{
+              flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE",
+              background: section === key ? "#1E3A6D" : "#FFFFFF", color: section === key ? "#fff" : "#1B2430",
+              fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
+            }}>
+              {label}
+            </button>
+          ))}
         </div>
 
-        <input
-          placeholder="Search by name, email, or patient ID" value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{ ...inputStyle, marginBottom: 16, background: "#fff" }}
-        />
+        {section === "patients" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <SectionLabel>Staff</SectionLabel>
+                <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Patients</h2>
+              </div>
+              <button onClick={() => setAddOpen(true)} style={{
+                padding: "10px 16px", borderRadius: 12, background: "#E8631E", color: "#fff", border: "none",
+                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}>
+                + New patient
+              </button>
+            </div>
 
-        {loading ? (
-          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading patients...</div>
-        ) : shown.length === 0 ? (
-          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>No patients yet -- add your first one.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {shown.map((p) => (
-              <Card key={p.id} onClick={() => openPatient(p)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <User size={18} color="#1E3A6D" />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
-                      {(p.first_name || p.last_name) ? (p.first_name + " " + p.last_name).trim() : "(name not set)"}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              <input
+                placeholder="Search by name, email, or patient ID" value={search} onChange={(e) => setSearch(e.target.value)}
+                style={{ ...inputStyle, background: "#fff", flex: 1 }}
+              />
+              <select style={{ ...inputStyle, background: "#fff", width: 170, flexShrink: 0 }} value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+                <option value="newest">Newest patients</option>
+                <option value="dormant">Least active first</option>
+                <option value="active">Most active first</option>
+              </select>
+            </div>
+
+            {loading ? (
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading patients...</div>
+            ) : shown.length === 0 ? (
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>No patients yet -- add your first one.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {shown.map((p) => (
+                  <Card key={p.id} onClick={() => openPatient(p)} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <User size={18} color="#1E3A6D" />
                     </div>
-                    {!p.intake_completed && <Pill tone="accent">New lead</Pill>}
-                  </div>
-                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 1 }}>
-                    {(p.email || "no email") + " . " + (p.patient_code || "no patient ID yet")}
-                  </div>
-                </div>
-                <ChevronRight size={16} color="#8A96A3" />
-              </Card>
-            ))}
-          </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
+                          {(p.first_name || p.last_name) ? (p.first_name + " " + p.last_name).trim() : "(name not set)"}
+                        </div>
+                        {!p.intake_completed && <Pill tone="accent">New lead</Pill>}
+                      </div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 1 }}>
+                        {(p.email || "no email") + " . " + (p.patient_code || "no patient ID yet")}
+                      </div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: p.last_active_at ? "#8A96A3" : "#C4573F", marginTop: 2 }}>
+                        {daysAgoLabel(p.last_active_at)}
+                      </div>
+                    </div>
+                    <ChevronRight size={16} color="#8A96A3" />
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
         )}
+
+        {section === "promotions" && <PromotionsManager />}
       </div>
 
       {addOpen && <AddPatientModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />}
       {editing && (
         <AdminPanel data={editing.bundle} patientId={editing.id} role={staffRecord?.role || "admin"} onSave={handleSave} onClose={() => setEditing(null)} />
       )}
+    </div>
+  );
+}
+
+function PromotionsManager() {
+  const [promotions, setPromotions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const rows = await db.fetchPromotions();
+      setPromotions(rows);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const remove = async (p) => {
+    try {
+      await db.deletePromotion(p.id, p.filePath);
+      load();
+    } catch (e) { console.error(e); }
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <SectionLabel>Staff</SectionLabel>
+          <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Promotions</h2>
+        </div>
+        <button onClick={() => setUploadOpen(true)} style={{
+          padding: "10px 16px", borderRadius: 12, background: "#E8631E", color: "#fff", border: "none",
+          fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer",
+        }}>
+          + Add promotion
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading promotions...</div>
+      ) : promotions.length === 0 ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>No promotions yet -- add your first one.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {promotions.map((p) => {
+            const expired = p.expiresAt && p.expiresAt < today;
+            return (
+              <Card key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, opacity: expired ? 0.55 : 1 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                  {p.fileType === "image" ? (
+                    <img src={p.fileUrl} alt={p.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ) : (
+                    <FileText size={20} color="#1E3A6D" />
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{p.title}</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 2 }}>
+                    {p.expiresAt ? (expired ? "Expired " + formatDateDMY(p.expiresAt) : "Expires " + formatDateDMY(p.expiresAt)) : "No expiry"}
+                  </div>
+                </div>
+                <a href={p.fileUrl} target="_blank" rel="noreferrer" style={{
+                  padding: "6px 12px", borderRadius: 999, background: "#1E3A6D", color: "#fff",
+                  fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, textDecoration: "none",
+                }}>View</a>
+                <Trash2 size={16} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => remove(p)} />
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {uploadOpen && <UploadPromotionModal onClose={() => setUploadOpen(false)} onUploaded={load} />}
+    </>
+  );
+}
+
+function UploadPromotionModal({ onClose, onUploaded }) {
+  const [file, setFile] = useState(null);
+  const [title, setTitle] = useState("");
+  const [expiresAt, setExpiresAt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const canUpload = file && title.trim();
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const fileType = file.type === "application/pdf" ? "pdf" : "image";
+      const path = await db.uploadPromotionFile(file);
+      await db.createPromotion({ title: title.trim(), filePath: path, fileType, expiresAt: expiresAt || null });
+      onUploaded();
+      onClose();
+    } catch (e) {
+      setError(e.message || "Upload failed -- please try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <SectionLabel>Add a promotion</SectionLabel>
+          <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
+        </div>
+
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", lineHeight: 1.6, marginBottom: 18 }}>
+          Upload a photo or PDF flyer. It'll appear on every patient's Home screen until it expires (or forever, if left blank).
+        </p>
+
+        <FieldRow label="Title"><input style={inputStyle} placeholder="e.g. SG61 National Day Special" value={title} onChange={(e) => setTitle(e.target.value)} /></FieldRow>
+        <FieldRow label="File (photo or PDF)">
+          <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files[0] || null)} style={{ ...inputStyle, padding: "8px 11px" }} />
+        </FieldRow>
+        <FieldRow label="Expires on (optional)"><DatePickerField value={expiresAt} onChange={setExpiresAt} /></FieldRow>
+
+        {error && <div style={{ color: "#C4573F", fontSize: 12, fontFamily: "'Inter', sans-serif", marginBottom: 10 }}>{error}</div>}
+
+        <button onClick={submit} disabled={!canUpload || busy} style={{
+          width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
+          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14,
+          cursor: canUpload && !busy ? "pointer" : "default", opacity: canUpload ? 1 : 0.5, marginTop: 6,
+        }}>
+          {busy ? "Uploading..." : "Upload"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -3611,6 +3838,7 @@ export default function AmazingHearingApp() {
       const patientRow = await db.resolveMyPatientRecord(user);
       setPatientId(patientRow.id);
       setUserEmail(user.email);
+      db.touchLastActive(patientRow.id);
       if (!patientRow.intake_completed) {
         setPhase("intake");
         return;

@@ -250,6 +250,16 @@ export async function completeIntake(patientId, draft) {
 /* ---------------------------------------------------------
    STAFF: PATIENT LIST
 --------------------------------------------------------- */
+export async function touchLastActive(patientId) {
+  // Fire-and-forget: records that the patient actually opened the app (not just authenticated),
+  // so staff can see who has genuinely gone quiet for reactivation outreach.
+  try {
+    await supabase.from("patients").update({ last_active_at: new Date().toISOString() }).eq("id", patientId);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 export async function fetchAllPatients() {
   const { data, error } = await supabase.from("patients").select("*").order("created_at", { ascending: false });
   if (error) throw error;
@@ -290,6 +300,41 @@ export async function saveProfileFields(patientId, profile) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", patientId);
+  if (error) throw error;
+}
+
+/* ---------------------------------------------------------
+   PROMOTIONS -- staff-managed, shared across all patients.
+   Stored in a public bucket since promo images/PDFs aren't sensitive.
+--------------------------------------------------------- */
+export async function fetchPromotions() {
+  const { data, error } = await supabase.from("promotions").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((p) => ({
+    id: p.id, title: p.title, filePath: p.file_path, fileType: p.file_type,
+    expiresAt: p.expires_at, createdAt: p.created_at,
+    fileUrl: supabase.storage.from("promotions").getPublicUrl(p.file_path).data.publicUrl,
+  }));
+}
+
+export async function uploadPromotionFile(file) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = Date.now() + "_" + safeName;
+  const { error } = await supabase.storage.from("promotions").upload(path, file, { upsert: true });
+  if (error) throw error;
+  return path;
+}
+
+export async function createPromotion({ title, filePath, fileType, expiresAt }) {
+  const { error } = await supabase.from("promotions").insert({
+    title, file_path: filePath, file_type: fileType, expires_at: expiresAt || null,
+  });
+  if (error) throw error;
+}
+
+export async function deletePromotion(id, filePath) {
+  await supabase.storage.from("promotions").remove([filePath]);
+  const { error } = await supabase.from("promotions").delete().eq("id", id);
   if (error) throw error;
 }
 
