@@ -443,6 +443,15 @@ const PRODUCTS = [
   { id: "svc-apd", name: "APD Testing", category: "Services", price: 1200.00 },
 ];
 
+// Top-level Shop groups -- keeps the filter row short; tapping a group with more
+// than one sub-category reveals a second row to narrow further.
+const SHOP_GROUPS = [
+  { label: "Services", categories: ["Services"] },
+  { label: "Accessories", categories: ["Custom Earplug", "Cleaning", "Consumables"] },
+  { label: "Batteries & Charger", categories: ["Implant Battery", "Battery", "Charger"] },
+  { label: "Hearing Aid Brands", categories: ["Oticon", "Phonak", "ReSound", "Signia"] },
+];
+
 // Cognitive screening and auditory training can also be added to the shared cart
 // (in addition to their own dedicated "Learn more" purchase flow).
 const ALL_PRODUCTS = [...PRODUCTS, DBFS_PRODUCT, LACE_PRODUCT];
@@ -1729,10 +1738,17 @@ function TrainTab({ cognitive, cart, setCart }) {
    TABS: SHOP
 --------------------------------------------------------- */
 function ShopTab({ cart, setCart, onOpenCheckout }) {
-  const [category, setCategory] = useState("All");
+  const [group, setGroup] = useState("All");
+  const [subCategory, setSubCategory] = useState("All");
   const [query, setQuery] = useState("");
-  const categories = ["All", ...Array.from(new Set(PRODUCTS.map((p) => p.category)))];
-  const byCategory = category === "All" ? PRODUCTS : PRODUCTS.filter((p) => p.category === category);
+
+  const activeGroup = SHOP_GROUPS.find((g) => g.label === group);
+  const showSubRow = activeGroup && activeGroup.categories.length > 1;
+
+  const selectGroup = (g) => { setGroup(g); setSubCategory("All"); };
+
+  const byGroup = !activeGroup ? PRODUCTS : PRODUCTS.filter((p) => activeGroup.categories.includes(p.category));
+  const byCategory = subCategory === "All" ? byGroup : byGroup.filter((p) => p.category === subCategory);
   const q = query.trim().toLowerCase();
   const shown = q
     ? byCategory.filter((p) => [p.name, p.category, p.desc, p.compatible].filter(Boolean).some((f) => f.toLowerCase().includes(q)))
@@ -1760,16 +1776,30 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
       </div>
 
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
-        {categories.map((c) => (
-          <button key={c} onClick={() => setCategory(c)} style={{
+        {["All", ...SHOP_GROUPS.map((g) => g.label)].map((g) => (
+          <button key={g} onClick={() => selectGroup(g)} style={{
             flexShrink: 0, padding: "8px 14px", borderRadius: 999, border: "1px solid #E3E7EE",
-            background: category === c ? "#1E3A6D" : "#FFFFFF", color: category === c ? "#fff" : "#1B2430",
+            background: group === g ? "#1E3A6D" : "#FFFFFF", color: group === g ? "#fff" : "#1B2430",
             fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap",
           }}>
-            {c}
+            {g}
           </button>
         ))}
       </div>
+
+      {showSubRow && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, marginTop: -8 }}>
+          {["All", ...activeGroup.categories].map((c) => (
+            <button key={c} onClick={() => setSubCategory(c)} style={{
+              flexShrink: 0, padding: "6px 12px", borderRadius: 999, border: "1px solid #E3E7EE",
+              background: subCategory === c ? "#3E5A8F" : "#F4F6F9", color: subCategory === c ? "#fff" : "#4A5568",
+              fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
 
       {shown.length === 0 && (
         <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#8A96A3", textAlign: "center", padding: "24px 0" }}>
