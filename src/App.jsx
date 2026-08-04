@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -974,6 +974,7 @@ const SOCIAL_ICON_COMPONENTS = { Instagram, Facebook, Linkedin };
 function HomeTab({ setTab, profile, appointments, onEditProfile }) {
   const next = appointments.find((a) => a.status === "upcoming");
   const [apptOpen, setApptOpen] = useState(false);
+  const [clinicsOpen, setClinicsOpen] = useState(false);
   const [promotions, setPromotions] = useState([]);
 
   useEffect(() => {
@@ -1059,6 +1060,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
             { icon: Ear, label: "My Devices", tab: "device" },
             { icon: Calendar, label: "Request Appointment", onClick: () => setApptOpen(true) },
             { icon: ShoppingBag, label: "Shop", tab: "shop" },
+            { icon: MapPin, label: "Our Clinics", onClick: () => setClinicsOpen(true) },
             { icon: Star, label: "Google Review", onClick: () => window.open(reviewLink, "_blank", "noreferrer") },
           ].map(({ icon: Icon, label, tab, onClick }) => (
             <Card key={label} onClick={onClick || (() => setTab(tab))} style={{ display: "flex", flexDirection: "column", gap: 10, padding: 14 }}>
@@ -1072,6 +1074,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
       </div>
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
+      {clinicsOpen && <ClinicsModal onClose={() => setClinicsOpen(false)} />}
 
       <Card style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
         <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#64707E", letterSpacing: "0.04em", textTransform: "uppercase" }}>
@@ -2044,6 +2047,76 @@ function AppointmentRequestModal({ profile, onClose }) {
 }
 
 /* ---------------------------------------------------------
+   OUR CLINICS -- static locator: address, hours, directions,
+   and a call/WhatsApp button (same mainline number for all).
+--------------------------------------------------------- */
+function ClinicsModal({ onClose }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <SectionLabel>Our Clinics</SectionLabel>
+          <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {CLINICS.map((c) => {
+            const address = CLINIC_ADDRESSES[c];
+            const note = CLINIC_NOTES[c];
+            const directionsLink = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(address);
+            return (
+              <Card key={c} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <MapPin size={16} color="#1E3A6D" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, color: "#1B2430" }}>{c}</div>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E", marginTop: 2, lineHeight: 1.5 }}>{address}</div>
+                  </div>
+                </div>
+
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#64707E", lineHeight: 1.7, paddingLeft: 44 }}>
+                  {clinicHoursSummary(c).map((line) => <div key={line}>{line}</div>)}
+                  {note && <div style={{ color: "#C4573F", fontWeight: 600, marginTop: 2 }}>{note}</div>}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, paddingLeft: 44 }}>
+                  <a href={directionsLink} target="_blank" rel="noreferrer" style={{ flex: 1, textDecoration: "none" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 10,
+                      background: "#1E3A6D", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12,
+                    }}>
+                      <MapPin size={13} /> Directions
+                    </div>
+                  </a>
+                  <a href={"tel:+" + MAINLINE_WHATSAPP} style={{ flex: 1, textDecoration: "none" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 10,
+                      border: "1px solid #E3E7EE", color: "#1B2430", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12,
+                    }}>
+                      <Phone size={13} /> Call
+                    </div>
+                  </a>
+                  <a href={"https://wa.me/" + MAINLINE_WHATSAPP} target="_blank" rel="noreferrer" style={{ flex: 1, textDecoration: "none" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 0", borderRadius: 10,
+                      border: "1px solid #E3E7EE", color: "#1B2430", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12,
+                    }}>
+                      <MessageCircle size={13} /> WhatsApp
+                    </div>
+                  </a>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
    TABS: CARE (+ Documents: Reports & Invoices)
 --------------------------------------------------------- */
 function DocumentViewButton({ doc }) {
@@ -2284,6 +2357,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
       </div>
 
       {apptOpen && <AppointmentRequestModal profile={profile} onClose={() => setApptOpen(false)} />}
+      {clinicsOpen && <ClinicsModal onClose={() => setClinicsOpen(false)} />}
       {uploadOpen && (
         <UploadDocumentModal
           patientId={patientId}
@@ -3479,13 +3553,27 @@ const CLINICS = ["Bedok", "Chinatown", "Jurong", "Novena", "Orchard", "Paya Leba
 
 // Weekly hours per clinic, indexed Sun(0)..Sat(6). null = closed that day.
 const CLINIC_HOURS = {
-  "Bedok": [null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
-  "Chinatown": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
-  "Jurong": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
-  "Novena": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
+  "Bedok": [null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
+  "Chinatown": [null, null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
+  "Jurong": [null, null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
+  "Novena": [null, null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
   "Orchard": [null, ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["09:00", "12:00"]],
   "Paya Lebar": [null, null, null, ["14:00", "18:30"], null, null, null],
-  "Serangoon (Nex)": [null, ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"]],
+  "Serangoon (Nex)": [null, ["11:00", "19:00"], ["11:00", "19:00"], ["11:00", "19:00"], ["11:00", "19:00"], ["11:00", "19:00"], ["11:00", "19:00"]],
+};
+
+const CLINIC_ADDRESSES = {
+  "Bedok": "311 New Upper Changi Road, B2-48A, Bedok Mall, Singapore 467360",
+  "Chinatown": "133 New Bridge Road #B2-04/05, Chinatown Point, Singapore 059413",
+  "Jurong": "Blk 135 Jurong Gateway Road #01-323, Jurong Central, Singapore 600135",
+  "Novena": "8 Sinaran Drive #02-01, Novena Specialist Centre (Next to Oasia Hotel), Singapore 307470",
+  "Orchard": "3 Mount Elizabeth, #03-01 Medical Centre, Singapore 228510",
+  "Paya Lebar": "10 Paya Lebar Rd, #03-17 PLQ Mall, Singapore 409057",
+  "Serangoon (Nex)": "23 Serangoon Central #B1-50/51, NEX Shopping Mall, Singapore 556083",
+};
+
+const CLINIC_NOTES = {
+  "Paya Lebar": "Strictly by appointment",
 };
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -3496,6 +3584,37 @@ function formatTimeLabel(totalMinutes) {
   const period = hh >= 12 ? "PM" : "AM";
   let h12 = hh % 12; if (h12 === 0) h12 = 12;
   return h12 + ":" + String(mm).padStart(2, "0") + " " + period;
+}
+
+function toMinutes(hhmm) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Groups consecutive days with identical hours into readable lines, e.g.
+// ["Monday -- Saturday: 10:00 AM -- 6:30 PM", "Sunday: Closed"].
+function clinicHoursSummary(clinic) {
+  const hours = CLINIC_HOURS[clinic];
+  if (!hours) return [];
+  const order = [1, 2, 3, 4, 5, 6, 0]; // Monday..Sunday
+  const keyFor = (day) => {
+    const r = hours[day];
+    if (!r) return "Closed";
+    return formatTimeLabel(toMinutes(r[0])) + " -- " + formatTimeLabel(toMinutes(r[1]));
+  };
+  const lines = [];
+  let i = 0;
+  while (i < order.length) {
+    const key = keyFor(order[i]);
+    let j = i;
+    while (j + 1 < order.length && keyFor(order[j + 1]) === key) j++;
+    const startName = WEEKDAY_NAMES[order[i]];
+    const endName = WEEKDAY_NAMES[order[j]];
+    const dayLabel = startName === endName ? startName : startName + " -- " + endName;
+    lines.push(dayLabel + ": " + key);
+    i = j + 1;
+  }
+  return lines;
 }
 
 // Returns { slots: [...] } for open days, or { closed: true, weekday } for closed days,
