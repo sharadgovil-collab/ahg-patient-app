@@ -108,7 +108,6 @@ const DEFAULT_PROFILE = {
   significantOtherRelation: "",
   clinic: "Amazing Hearing -- Novena",
   audiologist: "Dr. Sharad Govil",
-  clinicPhone: "+65 8123 4567",
 };
 
 const DEFAULT_APPOINTMENTS = [
@@ -1290,7 +1289,7 @@ function ServiceRequestModal({ devices, profile, onClose }) {
       "Issue: " + problem,
       note ? "Note: " + note : "",
     ].filter(Boolean).join("\n");
-    return "https://wa.me/" + profile.clinicPhone.replace(/[^\d]/g, "") + "?text=" + encodeURIComponent(lines);
+    return "https://wa.me/" + MAINLINE_WHATSAPP + "?text=" + encodeURIComponent(lines);
   };
 
   return (
@@ -1842,7 +1841,7 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
       if (!res.ok) throw new Error(data.error || "Checkout failed");
       sessionStorage.setItem("ahg_pending_order", JSON.stringify({
         items: data.orderSummary, total: data.total, clinic: profile.clinic,
-        patientName: profile.firstName + " " + profile.lastName, patientId: profile.id, clinicPhone: profile.clinicPhone,
+        patientName: profile.firstName + " " + profile.lastName, patientId: profile.id,
       }));
       window.location.href = data.url;
     } catch (e) {
@@ -2224,7 +2223,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
   const [docCategory, setDocCategory] = useState("All");
   const [apptOpen, setApptOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const waLink = "https://wa.me/" + profile.clinicPhone.replace(/[^\d]/g, "");
+  const waLink = "https://wa.me/" + MAINLINE_WHATSAPP;
   const docCategories = ["All", "Reports", "Invoices", "My Uploads"];
   const shownDocs = docCategory === "All" ? documents : documents.filter((d) => d.category === docCategory);
 
@@ -2252,7 +2251,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
               <span style={{ color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13 }}>WhatsApp</span>
             </div>
           </a>
-          <a href={"tel:" + profile.clinicPhone} style={{ flex: 1, textDecoration: "none" }}>
+          <a href={"tel:+" + MAINLINE_WHATSAPP} style={{ flex: 1, textDecoration: "none" }}>
             <div style={{ background: "rgba(255,255,255,0.14)", borderRadius: 10, padding: "10px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <Phone size={15} color="#fff" />
               <span style={{ color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13 }}>Call</span>
@@ -2699,7 +2698,6 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
                 </select>
               </FieldRow>
               <FieldRow label="Audiologist"><input style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)} /></FieldRow>
-              <FieldRow label="Clinic contact number (used for WhatsApp/Call buttons)"><input style={inputStyle} value={draft.profile.clinicPhone} onChange={(e) => setField("clinicPhone", e.target.value)} /></FieldRow>
             </>
           )}
 
@@ -3885,7 +3883,7 @@ function PaymentReturnScreen({ status, onContinue }) {
       ...order.items.map((i) => i.qty + "x " + i.name + " -- S$" + (i.price * i.qty).toFixed(2)),
       "Total (incl. GST): S$" + order.total.toFixed(2),
     ].join("\n");
-    return "https://wa.me/" + (order.clinicPhone || "").replace(/[^\d]/g, "") + "?text=" + encodeURIComponent(lines);
+    return "https://wa.me/" + MAINLINE_WHATSAPP + "?text=" + encodeURIComponent(lines);
   };
 
   return (
