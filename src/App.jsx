@@ -613,10 +613,15 @@ function DatePickerField({ value, onChange, placeholder = "Select date" }) {
         <Calendar size={14} color="#8A96A3" />
       </div>
       {open && (
-        <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199 }} />
-          <div style={{
-            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 200, background: "#fff",
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 199, background: "rgba(27,36,48,0.35)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{
+            position: "relative", zIndex: 200, background: "#fff",
             border: "1px solid #E3E7EE", borderRadius: 14, padding: 14, width: 280,
             boxShadow: "0 12px 30px rgba(27,36,48,0.18)",
           }}>
@@ -655,7 +660,7 @@ function DatePickerField({ value, onChange, placeholder = "Select date" }) {
               })}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -1289,8 +1294,8 @@ function ServiceRequestModal({ devices, profile, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Service & Repair</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1456,8 +1461,8 @@ function LaceModal({ onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Auditory Training</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1539,8 +1544,8 @@ function DbfsModal({ onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Cognitive</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1859,8 +1864,8 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Checkout</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1941,8 +1946,8 @@ function AppointmentRequestModal({ profile, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Request an appointment</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2029,8 +2034,8 @@ function AppointmentRequestModal({ profile, onClose }) {
 --------------------------------------------------------- */
 function ClinicsModal({ onClose }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Our Clinics</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2095,8 +2100,8 @@ function ClinicsModal({ onClose }) {
 
 function PromotionsListModal({ promotions, onClose }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Promotions</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2184,8 +2189,8 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Upload a document</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2525,8 +2530,8 @@ function EditProfileModal({ profile, onSave, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", display: "flex", flexDirection: "column", borderRadius: "24px 24px 0 0" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
         <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <SectionLabel>My profile</SectionLabel>
@@ -2610,8 +2615,8 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
   const setField = (key, val) => setDraft((prev) => ({ ...prev, [section]: { ...prev[section], [key]: val } }));
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, height: "88vh", borderRadius: "24px 24px 0 0", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, height: "88vh", borderRadius: 20, display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "20px 20px 12px", borderBottom: "1px solid #E3E7EE" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -3514,8 +3519,8 @@ function UploadPromotionModal({ onClose, onUploaded }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: "24px 24px 0 0", padding: 24 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Add a promotion</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
