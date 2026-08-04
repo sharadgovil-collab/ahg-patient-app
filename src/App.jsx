@@ -430,6 +430,17 @@ const PRODUCTS = [
   { id: "con-clipngo", name: "Clip n Go", category: "Consumables", price: 25.00 },
   { id: "con-audioshoe", name: "DAI Audioshoe", category: "Consumables", price: 54.50 },
   { id: "con-earimpression", name: "Ear Impression", category: "Consumables", price: 54.50 },
+  { id: "svc-teleconsult-short", name: "Short Teleconsultation (30 mins)", category: "Services", price: 60.00 },
+  { id: "svc-teleconsult-long", name: "Long Teleconsultation (30-60 mins)", category: "Services", price: 120.00 },
+  { id: "svc-comprehensive-has", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Hearing Aid Specialist", category: "Services", price: 120.00 },
+  { id: "svc-comprehensive-audio", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Audiologist", category: "Services", price: 175.00 },
+  { id: "svc-comprehensive-chief", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Chief Audiologist", category: "Services", price: 250.00 },
+  { id: "svc-comprehensive-speech", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Speech Therapist", category: "Services", price: 175.00 },
+  { id: "svc-homevisit", name: "Home Visit", category: "Services", price: 218.00 },
+  { id: "svc-tinnitus", name: "Tinnitus Assessment and Management", category: "Services", price: 272.50 },
+  { id: "svc-earwax", name: "Ear Wax Removal", category: "Services", price: 200.00 },
+  { id: "svc-rem", name: "Real Ear Measurement", category: "Services", price: 500.00 },
+  { id: "svc-apd", name: "APD Testing", category: "Services", price: 1200.00 },
 ];
 
 // Cognitive screening and auditory training can also be added to the shared cart
