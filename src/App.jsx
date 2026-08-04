@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -2621,12 +2621,144 @@ const ADMIN_SECTIONS = [
   { key: "appointments", label: "Appointments" },
   { key: "documents", label: "Documents" },
   { key: "datalog", label: "Datalogging" },
+  { key: "questionnaires", label: "Questionnaires" },
 ];
 
 // Staff can view and edit everything about a patient -- the one thing they can never
 // do is delete data. That's enforced for real at the database (RLS DELETE policies
 // are super_admin-only), but we also hide the remove/delete affordances for staff so
 // the UI doesn't offer an action that would silently no-op.
+/* ---------------------------------------------------------
+   STAFF: READABLE QUESTIONNAIRE ANSWERS
+   Decodes the raw {questionIndex: numericValue} JSON saved from the
+   patient side back into the actual question text + the option the
+   patient picked, so staff never have to read raw scores off the DB.
+--------------------------------------------------------- */
+function decodeQuestionnaireAnswers(questionnaireId, answers) {
+  const q = QUESTIONNAIRES.find((x) => x.id === questionnaireId);
+  if (!q || !q.questions) return [];
+  return q.questions.map((question, i) => {
+    const raw = answers ? (answers[i] !== undefined ? answers[i] : answers[String(i)]) : undefined;
+    if (raw === undefined || raw === null || raw === "") {
+      return { question: question.text, answer: "(not answered)" };
+    }
+    if (question.type === "choice") {
+      const opt = (question.options || []).find((o) => o.value === raw || o.value === Number(raw));
+      return { question: question.text, answer: opt ? opt.label : String(raw) };
+    }
+    if (question.type === "scale") {
+      return { question: question.text, answer: raw + " / 10  (" + question.leftLabel + " -> " + question.rightLabel + ")" };
+    }
+    return { question: question.text, answer: String(raw) }; // free-text response
+  });
+}
+
+function printQuestionnaireResult(patientName, q, record) {
+  const rows = decodeQuestionnaireAnswers(q.id, record.answers);
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  win.document.write(
+    "<html><head><title>" + esc(q.short + " -- " + patientName) + "</title><style>" +
+    "body{font-family:Arial,Helvetica,sans-serif;color:#1B2430;padding:32px;max-width:720px;margin:0 auto;}" +
+    "h1{font-size:19px;margin:0 0 2px;}" +
+    ".sub{color:#64707E;font-size:12.5px;margin-bottom:20px;}" +
+    ".summary{display:flex;gap:28px;padding:14px 18px;background:#F4F5F8;border-radius:10px;margin-bottom:22px;}" +
+    ".summary .num{font-size:22px;font-weight:700;color:#1E3A6D;display:block;}" +
+    ".summary .lbl{font-size:11.5px;color:#64707E;}" +
+    "table{width:100%;border-collapse:collapse;font-size:12.5px;}" +
+    "td{padding:9px 6px;border-bottom:1px solid #E3E7EE;vertical-align:top;}" +
+    "td.q{width:64%;}" + "td.a{font-weight:600;}" +
+    "@media print{body{padding:0;}}" +
+    "</style></head><body>" +
+    "<h1>" + esc(q.name) + " (" + esc(q.short) + ")</h1>" +
+    "<div class=\"sub\">" + esc(patientName) + " &middot; Completed " + esc(formatDateDMY(record.completedAt)) + "</div>" +
+    "<div class=\"summary\">" +
+    "<div><span class=\"num\">" + esc(record.score) + (record.maxScore ? " / " + esc(record.maxScore) : "") + "</span><span class=\"lbl\">Score</span></div>" +
+    "<div><span class=\"num\" style=\"font-size:15px\">" + esc(record.band || "") + "</span><span class=\"lbl\">" + esc(record.bandDetail || "") + "</span></div>" +
+    "</div>" +
+    "<table>" + rows.map((r, i) => "<tr><td class=\"q\">" + (i + 1) + ". " + esc(r.question) + "</td><td class=\"a\">" + esc(r.answer) + "</td></tr>").join("") + "</table>" +
+    "</body></html>"
+  );
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 300);
+}
+
+function QuestionnaireHistoryCard({ patientName, record }) {
+  const [open, setOpen] = useState(false);
+  const q = QUESTIONNAIRES.find((x) => x.id === record.questionnaireId);
+  const rows = open ? decodeQuestionnaireAnswers(record.questionnaireId, record.answers) : [];
+  return (
+    <div style={{ border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setOpen((v) => !v)}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: "#1B2430" }}>
+              {q ? q.name + " (" + q.short + ")" : record.questionnaireId}
+            </span>
+            {record.band && <Pill tone="accent">{record.band}</Pill>}
+          </div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 3 }}>
+            {"Completed " + formatDateDMY(record.completedAt) + " . Score " + record.score + (record.maxScore ? " / " + record.maxScore : "")}
+          </div>
+          {record.bandDetail && (
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#64707E", marginTop: 2 }}>{record.bandDetail}</div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {q && (
+            <Printer
+              size={16} color="#64707E" style={{ cursor: "pointer" }}
+              onClick={() => printQuestionnaireResult(patientName, q, record)}
+            />
+          )}
+          {open ? (
+            <ChevronUp size={16} color="#8A96A3" style={{ cursor: "pointer" }} onClick={() => setOpen(false)} />
+          ) : (
+            <ChevronDown size={16} color="#8A96A3" style={{ cursor: "pointer" }} onClick={() => setOpen(true)} />
+          )}
+        </div>
+      </div>
+      {open && q && (
+        <div style={{ marginTop: 12, borderTop: "1px solid #E3E7EE", paddingTop: 12 }}>
+          {rows.map((r, i) => (
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1B2430" }}>{(i + 1) + ". " + r.question}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, fontWeight: 700, color: "#1E3A6D", marginTop: 2 }}>{r.answer}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && !q && (
+        <div style={{ marginTop: 10, fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3" }}>
+          Question text isn't available for this questionnaire type.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionnaireHistorySection({ patientName, questionnaires }) {
+  if (!questionnaires || questionnaires.length === 0) {
+    return (
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", textAlign: "center", padding: "20px 0" }}>
+        No questionnaires completed yet.
+      </div>
+    );
+  }
+  return (
+    <>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginBottom: 12 }}>
+        Tap a questionnaire to see exactly what the patient answered, question by question. Use the printer icon to save a copy as a PDF.
+      </div>
+      {questionnaires.map((r) => (
+        <QuestionnaireHistoryCard key={r.id} patientName={patientName} record={r} />
+      ))}
+    </>
+  );
+}
+
 function AdminPanel({ data, patientId, role, onSave, onClose }) {
   const sections = ADMIN_SECTIONS;
   const canDelete = role === "super_admin";
@@ -3006,18 +3138,27 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
               <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3" }}>{"Target is fixed at " + TARGET_WEAR_HOURS + " hours/day."}</div>
             </>
           )}
+
+          {section === "questionnaires" && (
+            <QuestionnaireHistorySection
+              patientName={((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient"}
+              questionnaires={draft.questionnaires || []}
+            />
+          )}
         </div>
 
-        <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
-          <button onClick={commit} style={{
-            width: "100%", padding: "13px 0", borderRadius: 12, background: savedFlash === section ? "#4C6349" : "#1E3A6D",
-            color: "#fff", border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "background 0.2s",
-          }}>
-            {savedFlash === section ? <Check size={16} /> : <Save size={16} />}
-            {savedFlash === section ? "Saved" : "Save changes"}
-          </button>
-        </div>
+        {section !== "questionnaires" && (
+          <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
+            <button onClick={commit} style={{
+              width: "100%", padding: "13px 0", borderRadius: 12, background: savedFlash === section ? "#4C6349" : "#1E3A6D",
+              color: "#fff", border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "background 0.2s",
+            }}>
+              {savedFlash === section ? <Check size={16} /> : <Save size={16} />}
+              {savedFlash === section ? "Saved" : "Save changes"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -132,7 +132,7 @@ export function mapProfileRow(row) {
 }
 
 export async function fetchPatientBundle(patientId) {
-  const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes] = await Promise.all([
+  const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes, questionnairesRes] = await Promise.all([
     supabase.from("patients").select("*").eq("id", patientId).single(),
     supabase.from("audiograms").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
     supabase.from("sin_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
@@ -141,6 +141,7 @@ export async function fetchPatientBundle(patientId) {
     supabase.from("appointments").select("*").eq("patient_id", patientId),
     supabase.from("documents").select("*").eq("patient_id", patientId),
     supabase.from("datalog").select("*").eq("patient_id", patientId).maybeSingle(),
+    supabase.from("questionnaire_responses").select("*").eq("patient_id", patientId).order("completed_at", { ascending: false }),
   ]);
 
   return {
@@ -167,6 +168,10 @@ export async function fetchPatientBundle(patientId) {
     datalog: datalogRes.data
       ? { avgWear: datalogRes.data.avg_wear, lastSynced: datalogRes.data.last_synced }
       : { avgWear: 0, lastSynced: "Never" },
+    questionnaires: (questionnairesRes.data || []).map((r) => ({
+      id: r.id, questionnaireId: r.questionnaire_id, score: r.score, maxScore: r.max_score,
+      band: r.band, bandDetail: r.band_detail, completedAt: r.completed_at, answers: r.answers,
+    })),
   };
 }
 
