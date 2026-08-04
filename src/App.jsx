@@ -2,14 +2,14 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient.js";
 import * as db from "./db.js";
 import {
-  Home, Activity, Headphones, MessageCircle, ClipboardList,
+  Home, Activity, Ear, MessageCircle, ClipboardList,
   ChevronRight, Phone, Calendar, Wrench,
   BookOpen, Check, ChevronDown, Volume2,
   User, Bell, Sparkles, Globe, GraduationCap, PlayCircle, Moon,
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -765,6 +765,17 @@ function ModalShell({ children, maxWidth = 390 }) {
   );
 }
 
+function resolveQuestionnaireRecord(record, q) {
+  // Older saved results (before band/bandDetail were persisted) only have score + raw answers.
+  // Recompute the classification live from the stored answers so it always displays correctly.
+  if (!record || record.band) return record;
+  if (record.answers && q?.computeResult) {
+    const computed = q.computeResult(record.answers, q.questions);
+    return { ...record, ...computed };
+  }
+  return record;
+}
+
 function QuestionnaireResultCard({ result }) {
   const pct = result.maxScore ? Math.round((result.score / result.maxScore) * 100) : 0;
   return (
@@ -1003,7 +1014,7 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
           {[
             { icon: Activity, label: "Hearing Health", tab: "results" },
             { icon: Brain, label: "Brain Health", tab: "train" },
-            { icon: Headphones, label: "My Devices", tab: "device" },
+            { icon: Ear, label: "My Devices", tab: "device" },
             { icon: Calendar, label: "Request Appointment", onClick: () => setApptOpen(true) },
             { icon: ShoppingBag, label: "Shop", tab: "shop" },
             { icon: Star, label: "Google Review", onClick: () => window.open(reviewLink, "_blank", "noreferrer") },
@@ -1086,7 +1097,7 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
             <SectionLabel>Hearing Questionnaires</SectionLabel>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
               {QUESTIONNAIRES.filter((q) => q.category === "hearing").map((q) => {
-                const rec = saved[q.id]?.current;
+                const rec = resolveQuestionnaireRecord(saved[q.id]?.current, q);
                 return (
                   <Card key={q.id} onClick={() => !q.comingSoon && setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12, opacity: q.comingSoon ? 0.55 : 1 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: rec ? "#E3EBE2" : "#F0EFEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -1107,7 +1118,7 @@ function ResultsTab({ audiogramHistory, sin, patientId }) {
             <SectionLabel>Tinnitus Questionnaires</SectionLabel>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {QUESTIONNAIRES.filter((q) => q.category === "tinnitus").map((q) => {
-                const rec = saved[q.id]?.current;
+                const rec = resolveQuestionnaireRecord(saved[q.id]?.current, q);
                 return (
                   <Card key={q.id} onClick={() => setActive({ q, existingResult: rec || null })} style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: rec ? "#E3EBE2" : "#F0EFEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -1363,7 +1374,7 @@ function DeviceTab({ devices, datalog, profile }) {
               <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, fontWeight: 500, color: "#1B2430", marginTop: 8 }}>{d.model}</div>
             </div>
             <div style={{ width: 40, height: 40, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Headphones size={19} color="#1E3A6D" />
+              <Ear size={19} color="#1E3A6D" />
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontFamily: "'Inter', sans-serif", fontSize: 13 }}>
@@ -1371,7 +1382,9 @@ function DeviceTab({ devices, datalog, profile }) {
               ["Serial number", d.serial],
               ["Battery type", d.battery],
               ["Fitted on", formatDateDMY(d.fitted)],
-              ["Warranty", formatDateDMY(d.warranty)],
+              ["Product Warranty", formatDateDMY(d.warranty)],
+              ["Service Warranty", formatDateDMY(d.serviceWarranty)],
+              ["Loss & Damage Cover", formatDateDMY(d.lossDamageCover)],
               ["Last serviced", formatDateDMY(d.lastService)],
             ].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F0EFEA", paddingTop: 8 }}>
@@ -1588,7 +1601,7 @@ function TrainTab({ cognitive, cart, setCart }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
-        <SectionLabel>Cognitive & practice</SectionLabel>
+        <SectionLabel>Hear Better. Think Better</SectionLabel>
         <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 24, color: "#1B2430", margin: 0 }}>Cognitive and Brain Health</h2>
         <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", marginTop: 6, lineHeight: 1.6 }}>
           Our ears hear sounds, but your brain gives them meaning. When hearing declines, the brain can lose practice processing speech, which is why hearing aids combined with auditory training often deliver the best outcomes.
@@ -1664,7 +1677,7 @@ function TrainTab({ cognitive, cart, setCart }) {
         <Card style={{ display: "flex", gap: 12, alignItems: "flex-start", marginTop: 10 }}>
           <Smartphone size={17} color="#1E3A6D" style={{ marginTop: 2, flexShrink: 0 }} />
           <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", lineHeight: 1.6 }}>
-            LACE AI Pro training runs in its own app. Once you purchase, download <strong>LACE AI</strong> from the App Store or Google Play and sign in with your Amazing Hearing account to start your first session.
+            LACE AI Pro training runs in its own app. Once you purchase, a link will be sent to you to download <strong>LACE AI</strong> from the App Store or Google Play and sign in with your email or mobile number. Your Audiologist or Senior Hearing Aid Specialist will be happy to show how to use the training program.
           </div>
         </Card>
       </div>
@@ -1680,8 +1693,13 @@ function TrainTab({ cognitive, cart, setCart }) {
 --------------------------------------------------------- */
 function ShopTab({ cart, setCart, onOpenCheckout }) {
   const [category, setCategory] = useState("All");
+  const [query, setQuery] = useState("");
   const categories = ["All", ...Array.from(new Set(PRODUCTS.map((p) => p.category)))];
-  const shown = category === "All" ? PRODUCTS : PRODUCTS.filter((p) => p.category === category);
+  const byCategory = category === "All" ? PRODUCTS : PRODUCTS.filter((p) => p.category === category);
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? byCategory.filter((p) => [p.name, p.category, p.desc, p.compatible].filter(Boolean).some((f) => f.toLowerCase().includes(q)))
+    : byCategory;
   const cartCount = Object.values(cart).reduce((a, b) => a + b, 0);
 
   const add = (id) => setCart((prev) => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
@@ -1696,6 +1714,14 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
         </div>
       </div>
 
+      <div style={{ position: "relative" }}>
+        <Search size={16} color="#8A96A3" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+        <input
+          placeholder="Search products..." value={query} onChange={(e) => setQuery(e.target.value)}
+          style={{ ...inputStyle, background: "#fff", paddingLeft: 38 }}
+        />
+      </div>
+
       <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 2 }}>
         {categories.map((c) => (
           <button key={c} onClick={() => setCategory(c)} style={{
@@ -1707,6 +1733,12 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
           </button>
         ))}
       </div>
+
+      {shown.length === 0 && (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#8A96A3", textAlign: "center", padding: "24px 0" }}>
+          No products match "{query}".
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {shown.map((p) => (
@@ -1864,20 +1896,23 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
    confirm.
 --------------------------------------------------------- */
 function AppointmentRequestModal({ profile, onClose }) {
+  const [clinic, setClinic] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
 
-  const canSend = date.trim() && time.trim();
+  const availability = clinicTimeSlots(clinic, date);
+  const canSend = clinic.trim() && date.trim() && time.trim();
 
   const waLink = () => {
     const lines = [
       "Appointment Request",
       "Patient: " + profile.firstName + " " + profile.lastName + " (" + profile.id + ")",
+      "Preferred Clinic: " + clinic,
       "Preferred date: " + formatDateDMY(date),
       "Preferred time: " + time,
-      reason ? "Reason: " + reason : "",
+      reason ? "Appointment Type: " + reason : "",
       note ? "Note: " + note : "",
     ].filter(Boolean).join("\n");
     return "https://wa.me/" + MAINLINE_WHATSAPP + "?text=" + encodeURIComponent(lines);
@@ -1892,19 +1927,44 @@ function AppointmentRequestModal({ profile, onClose }) {
         </div>
 
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", lineHeight: 1.6, marginBottom: 18 }}>
-          Tell us your preferred date and time, and we'll send it to our clinic on WhatsApp -- our team will confirm with you there.
+          Tell us your preferred clinic, date and time, and we'll send it to our clinic on WhatsApp -- our team will confirm with you there.
         </p>
 
-        <FieldRow label="Preferred date"><DatePickerField value={date} onChange={setDate} /></FieldRow>
-        <FieldRow label="Preferred time"><input style={inputStyle} placeholder="e.g. 3:00 PM" value={time} onChange={(e) => setTime(e.target.value)} /></FieldRow>
-        <FieldRow label="Reason (optional)">
+        <FieldRow label="Preferred Clinic">
+          <select style={inputStyle} value={clinic} onChange={(e) => { setClinic(e.target.value); setTime(""); }}>
+            <option value="">Select a clinic</option>
+            {CLINICS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </FieldRow>
+        <FieldRow label="Preferred date">
+          <DatePickerField value={date} onChange={(v) => { setDate(v); setTime(""); }} />
+        </FieldRow>
+
+        {clinic && date && availability?.closed && (
+          <div style={{
+            background: "#FCEFE9", border: "1px solid #F2D2C2", borderRadius: 10, padding: "10px 12px",
+            fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#C4573F", marginBottom: 14, lineHeight: 1.5,
+          }}>
+            {clinic + " is closed on " + availability.weekday + "s. Please choose a different date."}
+          </div>
+        )}
+
+        <FieldRow label="Preferred time">
+          <select
+            style={inputStyle} value={time} onChange={(e) => setTime(e.target.value)}
+            disabled={!clinic || !date || availability?.closed}
+          >
+            <option value="">
+              {!clinic || !date ? "Select a clinic and date first" : availability?.closed ? "Clinic closed this day" : "Select a time"}
+            </option>
+            {availability?.slots?.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </FieldRow>
+
+        <FieldRow label="Appointment Type (optional)">
           <select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
-            <option value="">Select a reason</option>
-            <option value="Consultation">Consultation</option>
-            <option value="Device fitting / check">Device fitting / check</option>
-            <option value="Repair or service">Repair or service</option>
-            <option value="Hearing test">Hearing test</option>
-            <option value="Other">Other</option>
+            <option value="">Select an appointment type</option>
+            {APPOINTMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </FieldRow>
         <FieldRow label="Anything else? (optional)">
@@ -1929,9 +1989,13 @@ function AppointmentRequestModal({ profile, onClose }) {
             width: "100%", padding: "14px 0", borderRadius: 14, background: "#E7ECF3", textAlign: "center",
             fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#8A96A3", marginTop: 6,
           }}>
-            Enter a preferred date and time to continue
+            Select a clinic, date, and time to continue
           </div>
         )}
+
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", lineHeight: 1.6, marginTop: 12 }}>
+          Disclaimer: We will do our best to accommodate your preferred appointment date and time. However, appointments are subject to availability, so please wait for confirmation from our Customer Service team before considering your booking confirmed.
+        </p>
       </div>
     </div>
   );
@@ -2529,10 +2593,16 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
                   </FieldRow>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, marginTop: 8 }}>
                     <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3" }}>THRESHOLDS (dB HL)</div>
-                    <span onClick={() => {
-                      const next = [...draft.audiogramHistory]; next[i] = { ...next[i], left: [...next[i].right] };
-                      setDraft((p) => ({ ...p, audiogramHistory: next }));
-                    }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy right &rarr; left</span>
+                    <div style={{ display: "flex", gap: 12 }}>
+                      <span onClick={() => {
+                        const next = [...draft.audiogramHistory]; next[i] = { ...next[i], left: [...next[i].right] };
+                        setDraft((p) => ({ ...p, audiogramHistory: next }));
+                      }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy right &rarr; left</span>
+                      <span onClick={() => {
+                        const next = [...draft.audiogramHistory]; next[i] = { ...next[i], right: [...next[i].left] };
+                        setDraft((p) => ({ ...p, audiogramHistory: next }));
+                      }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy left &rarr; right</span>
+                    </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 4 }}>
                     <span style={{ fontSize: 10.5, color: "#8A96A3", fontFamily: "'IBM Plex Mono', monospace" }}>Freq</span>
@@ -2590,14 +2660,21 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: "#1E3A6D" }}>{d.ear + " ear device"}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {d.ear === "Left" && draft.devices.some((x) => x.ear === "Right") && (
-                    <span onClick={() => {
-                      const source = draft.devices.find((x) => x.ear === "Right");
-                      const next = [...draft.devices];
-                      next[i] = { ...next[i], model: source.model, serial: source.serial, battery: source.battery, fitted: source.fitted, warranty: source.warranty, lastService: source.lastService };
-                      setDraft((p) => ({ ...p, devices: next }));
-                    }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy from Right ear</span>
-                  )}
+                  {(() => {
+                    const otherEar = d.ear === "Left" ? "Right" : "Left";
+                    const source = draft.devices.find((x) => x.ear === otherEar);
+                    if (!source) return null;
+                    return (
+                      <span onClick={() => {
+                        const next = [...draft.devices];
+                        next[i] = {
+                          ...next[i], model: source.model, serial: source.serial, battery: source.battery, fitted: source.fitted,
+                          warranty: source.warranty, serviceWarranty: source.serviceWarranty, lossDamageCover: source.lossDamageCover, lastService: source.lastService,
+                        };
+                        setDraft((p) => ({ ...p, devices: next }));
+                      }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>{"Copy from " + otherEar + " ear"}</span>
+                    );
+                  })()}
                   <Trash2 size={15} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => {
                     const next = draft.devices.filter((_, idx) => idx !== i); setDraft((p) => ({ ...p, devices: next }));
                   }} />
@@ -2623,7 +2700,7 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
                   const next = [...draft.devices]; next[i] = { ...next[i], fitted: v }; setDraft((p) => ({ ...p, devices: next }));
                 }} />
               </FieldRow>
-              {[["warranty", "Warranty"], ["lastService", "Last serviced"]].map(([k, label]) => (
+              {[["warranty", "Product Warranty"], ["serviceWarranty", "Service Warranty"], ["lossDamageCover", "Loss & Damage Cover"], ["lastService", "Last serviced"]].map(([k, label]) => (
                 <FieldRow key={k} label={label}>
                   <DatePickerField value={d[k]} onChange={(v) => {
                     const next = [...draft.devices]; next[i] = { ...next[i], [k]: v }; setDraft((p) => ({ ...p, devices: next }));
@@ -2633,7 +2710,7 @@ function AdminPanel({ data, patientId, role, onSave, onClose }) {
             </div>
           ))}
           {section === "devices" && (
-            <button onClick={() => setDraft((p) => ({ ...p, devices: [...p.devices, { ear: "Right", model: "", serial: "", battery: "", fitted: "", warranty: "", lastService: "" }] }))} style={{
+            <button onClick={() => setDraft((p) => ({ ...p, devices: [...p.devices, { ear: "Right", model: "", serial: "", battery: "", fitted: "", warranty: "", serviceWarranty: "", lossDamageCover: "", lastService: "" }] }))} style={{
               width: "100%", padding: "10px 0", borderRadius: 10, border: "1px dashed #C7CDD8", background: "transparent",
               fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1E3A6D", cursor: "pointer",
             }}>+ Add device</button>
@@ -3159,8 +3236,54 @@ function StaffView({ staffRecord, onLogout }) {
 const SALUTATIONS = ["Dr", "Mr", "Ms", "Mrs", "Mdm"];
 const INTAKE_SALUTATIONS = ["Mr", "Ms"]; // registration form keeps it simple
 const BATTERY_TYPES = ["Rechargeable", "675", "13", "312", "10"];
-const APPOINTMENT_TYPES = ["Annual Review", "Consultation", "Fine Tuning", "Hearing Test", "Review", "Servicing"];
+const APPOINTMENT_TYPES = [
+  "Annual Review", "Balance Assessment", "CI Mapping", "Collection", "Consultation",
+  "Fine Tuning", "Fitting", "Home Visit", "Remote Fine Tuning", "Review", "Servicing", "Tinnitus Care",
+];
 const CLINICS = ["Bedok", "Chinatown", "Jurong", "Novena", "Orchard", "Paya Lebar", "Serangoon (Nex)"];
+
+// Weekly hours per clinic, indexed Sun(0)..Sat(6). null = closed that day.
+const CLINIC_HOURS = {
+  "Bedok": [null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
+  "Chinatown": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
+  "Jurong": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
+  "Novena": [null, null, ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"], ["10:30", "18:00"]],
+  "Orchard": [null, ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["10:00", "17:00"], ["09:00", "12:00"]],
+  "Paya Lebar": [null, null, null, ["14:00", "18:30"], null, null, null],
+  "Serangoon (Nex)": [null, ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"], ["11:30", "18:30"]],
+};
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function formatTimeLabel(totalMinutes) {
+  const hh = Math.floor(totalMinutes / 60);
+  const mm = totalMinutes % 60;
+  const period = hh >= 12 ? "PM" : "AM";
+  let h12 = hh % 12; if (h12 === 0) h12 = 12;
+  return h12 + ":" + String(mm).padStart(2, "0") + " " + period;
+}
+
+// Returns { slots: [...] } for open days, or { closed: true, weekday } for closed days,
+// or null if we don't have enough info yet (no clinic or no date picked).
+function clinicTimeSlots(clinic, dateIso) {
+  if (!clinic || !dateIso) return null;
+  const hours = CLINIC_HOURS[clinic];
+  if (!hours) return null;
+  const m = String(dateIso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const range = hours[day];
+  if (!range) return { closed: true, weekday: WEEKDAY_NAMES[day] };
+  const [openH, openM] = range[0].split(":").map(Number);
+  const [closeH, closeM] = range[1].split(":").map(Number);
+  const slots = [];
+  for (let t = openH * 60 + openM; t <= closeH * 60 + closeM; t += 30) {
+    slots.push(formatTimeLabel(t));
+  }
+  return { slots, weekday: WEEKDAY_NAMES[day] };
+}
 const CONSULTANTS = ["Chongwei Low", "Dr. Sharad Govil", "Ivy Ng", "Rakshitha Sridharan", "Raynee Wu", "Sean Lee", "Zu Xuan Lee"];
 const KNOW_US_OPTIONS = ["Online Advertisement", "Google Search", "Walk-in", "Referral"];
 
@@ -3536,7 +3659,7 @@ export default function AmazingHearingApp() {
     { key: "home", label: "Home", icon: Home },
     { key: "results", label: "Hearing", icon: Activity },
     { key: "train", label: "Cognitive", icon: Brain },
-    { key: "device", label: "Device", icon: Headphones },
+    { key: "device", label: "Device", icon: Ear },
     { key: "shop", label: "Shop", icon: ShoppingBag },
     { key: "care", label: "Care", icon: MessageCircle },
     { key: "forms", label: "Profile", icon: User },

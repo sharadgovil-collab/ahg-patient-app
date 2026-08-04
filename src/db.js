@@ -155,7 +155,8 @@ export async function fetchPatientBundle(patientId) {
       ? { id: cognitiveRes.data.id, testDate: cognitiveRes.data.test_date || "", score: cognitiveRes.data.score || "", interpretation: cognitiveRes.data.interpretation || "", notes: cognitiveRes.data.notes || "" }
       : { testDate: "", score: "", interpretation: "", notes: "" },
     devices: (devicesRes.data || []).map((d) => ({
-      id: d.id, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted, warranty: d.warranty, lastService: d.last_service,
+      id: d.id, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted,
+      warranty: d.warranty, serviceWarranty: d.service_warranty || "", lossDamageCover: d.loss_damage_cover || "", lastService: d.last_service,
     })),
     appointments: (apptsRes.data || []).map((a) => ({
       id: a.id, type: a.type, date: a.appt_date, time: a.appt_time, clinic: a.clinic, consultant: a.consultant || "", status: a.status,
@@ -363,7 +364,10 @@ export async function saveDevices(patientId, devices) {
   const keepIds = devices.filter((d) => isUuid(d.id)).map((d) => d.id);
   await supabase.from("devices").delete().eq("patient_id", patientId).not("id", "in", `(${keepIds.length ? keepIds.join(",") : "00000000-0000-0000-0000-000000000000"})`);
   for (const d of devices) {
-    const row = { patient_id: patientId, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted, warranty: d.warranty, last_service: d.lastService };
+    const row = {
+      patient_id: patientId, ear: d.ear, model: d.model, serial: d.serial, battery: d.battery, fitted: d.fitted,
+      warranty: d.warranty, service_warranty: d.serviceWarranty, loss_damage_cover: d.lossDamageCover, last_service: d.lastService,
+    };
     if (isUuid(d.id)) {
       await supabase.from("devices").update(row).eq("id", d.id);
     } else {
