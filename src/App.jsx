@@ -435,7 +435,7 @@ const PRODUCTS = [
   { id: "svc-comprehensive-has", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Hearing Aid Specialist", category: "Services", price: 120.00 },
   { id: "svc-comprehensive-audio", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Audiologist", category: "Services", price: 175.00 },
   { id: "svc-comprehensive-chief", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Chief Audiologist", category: "Services", price: 250.00 },
-  { id: "svc-comprehensive-speech", name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Speech Therapist", category: "Services", price: 175.00 },
+  { id: "svc-comprehensive-speech", name: "Consultation with Speech Therapist", category: "Services", price: 175.00 },
   { id: "svc-homevisit", name: "Home Visit", category: "Services", price: 218.00 },
   { id: "svc-tinnitus", name: "Tinnitus Assessment and Management", category: "Services", price: 272.50 },
   { id: "svc-earwax", name: "Ear Wax Removal", category: "Services", price: 200.00 },

@@ -59,7 +59,7 @@ const PRODUCTS = {
   "svc-comprehensive-has": { name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Hearing Aid Specialist", price: 120.00 },
   "svc-comprehensive-audio": { name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Audiologist", price: 175.00 },
   "svc-comprehensive-chief": { name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Chief Audiologist", price: 250.00 },
-  "svc-comprehensive-speech": { name: "Comprehensive Consultation (Test + HA Trial + Counselling) -- with Speech Therapist", price: 175.00 },
+  "svc-comprehensive-speech": { name: "Consultation with Speech Therapist", price: 175.00 },
   "svc-homevisit": { name: "Home Visit", price: 218.00 },
   "svc-tinnitus": { name: "Tinnitus Assessment and Management", price: 272.50 },
   "svc-earwax": { name: "Ear Wax Removal", price: 200.00 },
