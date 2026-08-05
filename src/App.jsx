@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer, Download, Eye, LayoutGrid
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer, Download, Eye, LayoutGrid, Stethoscope
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -445,12 +445,17 @@ const PRODUCTS = [
 
 // Top-level Shop groups -- keeps the filter row short; tapping a group with more
 // than one sub-category reveals a second row to narrow further.
+// "Services" (teleconsults, in-clinic assessments, etc.) deliberately live in
+// the Care tab's "Book a service" section instead of here -- patients look for
+// booking a consultation alongside appointments, not in a parts/accessories shop.
 const SHOP_GROUPS = [
-  { label: "Services", categories: ["Services"] },
   { label: "Accessories", categories: ["Custom Earplug", "Cleaning", "Consumables"] },
   { label: "Batteries & Charger", categories: ["Implant Battery", "Battery", "Charger"] },
   { label: "Hearing Aid Brands", categories: ["Oticon", "Phonak", "ReSound", "Signia"] },
 ];
+
+const SERVICE_PRODUCTS = PRODUCTS.filter((p) => p.category === "Services");
+const SHOP_PRODUCTS = PRODUCTS.filter((p) => p.category !== "Services");
 
 // Cognitive screening and auditory training can also be added to the shared cart
 // (in addition to their own dedicated "Learn more" purchase flow).
@@ -925,7 +930,7 @@ function ModalShell({ children, maxWidth = 390 }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <style>{"@keyframes popIn{from{transform:scale(0.97);opacity:0}to{transform:scale(1);opacity:1}}"}</style>
-      <div style={{ background: "#FFFFFF", width: "100%", maxWidth, maxHeight: "85vh", overflowY: "auto", borderRadius: 24, padding: 24, animation: "popIn 0.2s ease-out" }}>
+      <div style={{ background: "#FFFFFF", width: "100%", maxWidth, maxHeight: "85dvh", overflowY: "auto", borderRadius: 24, padding: 24, animation: "popIn 0.2s ease-out" }}>
         {children}
       </div>
     </div>
@@ -1544,7 +1549,7 @@ function ServiceRequestModal({ devices, profile, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Service & Repair</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1711,7 +1716,7 @@ function LaceModal({ onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Auditory Training</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1794,7 +1799,7 @@ function DbfsModal({ onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Cognitive</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -1977,7 +1982,7 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
 
   const selectGroup = (g) => { setGroup(g); setSubCategory("All"); };
 
-  const byGroup = !activeGroup ? PRODUCTS : PRODUCTS.filter((p) => activeGroup.categories.includes(p.category));
+  const byGroup = !activeGroup ? SHOP_PRODUCTS : SHOP_PRODUCTS.filter((p) => activeGroup.categories.includes(p.category));
   const byCategory = subCategory === "All" ? byGroup : byGroup.filter((p) => p.category === subCategory);
   const q = query.trim().toLowerCase();
   const shown = q
@@ -2133,9 +2138,14 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
     window.open("https://wa.me/" + MAINLINE_WHATSAPP + "?text=" + encodeURIComponent(lines), "_blank", "noreferrer");
   };
 
+  const clearCart = () => {
+    setCart({});
+    onClose();
+  };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Checkout</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2153,6 +2163,13 @@ function CheckoutModal({ cart, setCart, profile, onClose }) {
             <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + total}</span>
           </div>
           <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>Prices include GST</div>
+        </div>
+
+        <div onClick={clearCart} style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 16,
+          fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 600, color: "#C4573F", cursor: "pointer",
+        }}>
+          <Trash2 size={13} /> Clear cart
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16, fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3" }}>
@@ -2217,7 +2234,7 @@ function AppointmentRequestModal({ profile, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Request an appointment</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2305,7 +2322,7 @@ function AppointmentRequestModal({ profile, onClose }) {
 function ClinicsModal({ onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Our Clinics</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2371,7 +2388,7 @@ function ClinicsModal({ onClose }) {
 function PromotionsListModal({ promotions, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Promotions</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2460,7 +2477,7 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Upload a document</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -2489,11 +2506,12 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
   );
 }
 
-function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, readOnly = false }) {
+function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, cart, setCart, readOnly = false }) {
   const [openGuide, setOpenGuide] = useState(null);
   const [docCategory, setDocCategory] = useState("All");
   const [apptOpen, setApptOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [showAllServices, setShowAllServices] = useState(false);
   const waLink = "https://wa.me/" + MAINLINE_WHATSAPP;
   const docCategories = ["All", "Reports", "Invoices", "My Uploads"];
   const shownDocs = docCategory === "All" ? documents : documents.filter((d) => d.category === docCategory);
@@ -2571,6 +2589,54 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
         }}>
           + Request new appointment
         </button>
+      </div>
+
+      <div>
+        <SectionLabel>Book a service</SectionLabel>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginBottom: 10, lineHeight: 1.5 }}>
+          Teleconsultations and in-clinic services. Add one to your cart to pay online, or message us on WhatsApp to arrange it directly.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {(showAllServices ? SERVICE_PRODUCTS : SERVICE_PRODUCTS.slice(0, 4)).map((p) => (
+            <Card key={p.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Stethoscope size={16} color="#1E3A6D" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430" }}>{p.name}</div>
+                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#64707E", marginTop: 2 }}>{"S$" + p.price.toFixed(2)}</div>
+              </div>
+              {!readOnly && (
+                cart && cart[p.id] ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: Math.max(0, prev[p.id] - 1) }))} style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      <Minus size={12} color="#1B2430" />
+                    </button>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, minWidth: 14, textAlign: "center" }}>{cart[p.id]}</span>
+                    <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))} style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                      <Plus size={12} color="#fff" />
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))} style={{
+                    flexShrink: 0, padding: "6px 14px", borderRadius: 999, background: "#1E3A6D", color: "#fff", border: "none",
+                    fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, cursor: "pointer",
+                  }}>
+                    Add
+                  </button>
+                )
+              )}
+            </Card>
+          ))}
+        </div>
+        {SERVICE_PRODUCTS.length > 4 && (
+          <div onClick={() => setShowAllServices((v) => !v)} style={{
+            marginTop: 8, textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12,
+            color: "#1E3A6D", cursor: "pointer",
+          }}>
+            {showAllServices ? "Show fewer services" : "Show all " + SERVICE_PRODUCTS.length + " services"}
+          </div>
+        )}
       </div>
 
       <div>
@@ -2700,7 +2766,7 @@ function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProf
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
-        <SectionLabel>Your profile</SectionLabel>
+        <SectionLabel>Your account</SectionLabel>
         <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 24, color: "#1B2430", margin: 0 }}>Profile</h2>
       </div>
 
@@ -2758,7 +2824,7 @@ function ProfileTab({ profile, patientId, onLogout, onProfileUpdated, onEditProf
         <div onClick={() => setExpanded(!expanded)} style={{
           display: "flex", alignItems: "center", justifyContent: "space-between", padding: 16, cursor: "pointer",
         }}>
-          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>Full profile</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>Additional details</span>
           {expanded ? <ChevronUp size={16} color="#8A96A3" /> : <ChevronDown size={16} color="#8A96A3" />}
         </div>
         {expanded && (
@@ -2805,7 +2871,7 @@ function EditProfileModal({ profile, onSave, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "90dvh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
         <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <SectionLabel>My profile</SectionLabel>
@@ -2867,8 +2933,8 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.7)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{
+    <div className="ah-phone-page" style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.7)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="ah-phone-shell" style={{
         width: "100%", maxWidth: 390, height: 780, background: "#F4F5F8",
         borderRadius: 34, border: "8px solid #1E3A6D", boxShadow: "0 24px 60px rgba(27,36,48,0.4)",
         display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
@@ -2914,7 +2980,7 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={blockCheckout} />}
-          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={() => {}} readOnly />}
+          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={() => {}} cart={cart} setCart={setCart} readOnly />}
           {tab === "forms" && <ProfileTab profile={profile} patientId={patientId} onLogout={onExit} onProfileUpdated={() => {}} onEditProfile={() => {}} readOnly />}
         </div>
 
@@ -2930,6 +2996,9 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0, background: "#FFFFFF",
           borderTop: "1px solid #E3E7EE", display: "flex", padding: "10px 2px 16px",
+          // Adds extra bottom padding on notched phones (iPhone home-indicator gesture bar etc.)
+          // so the nav labels never sit under the device's own reserved safe area.
+          paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
         }}>
           {[
             { key: "home", label: "Home", icon: Home },
@@ -3570,7 +3639,7 @@ function RefundModal({ invoice, patientId, patientName, documents, onClose, onRe
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
         <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <SectionLabel>Invoice APP-{String(invoice.invoiceNumber).padStart(6, "0")}</SectionLabel>
@@ -3824,7 +3893,7 @@ function CreateInvoiceModal({ patientId, patientName, onClose, onCreated }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
         <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <SectionLabel>Documents</SectionLabel>
@@ -3943,7 +4012,7 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, height: "88vh", borderRadius: 20, display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, height: "88dvh", borderRadius: 20, display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "20px 20px 12px", borderBottom: "1px solid #E3E7EE" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -4509,7 +4578,7 @@ function SplashScreen({ onDone }) {
       </div>
 
       <svg viewBox="0 0 500 220" preserveAspectRatio="none" style={{
-        position: "absolute", bottom: 0, left: 0, width: "100%", height: "26vh", opacity: 0.85,
+        position: "absolute", bottom: 0, left: 0, width: "100%", height: "26dvh", opacity: 0.85,
       }}>
         <defs>
           <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -4613,7 +4682,7 @@ function OtpLogin({ onLogin }) {
       </div>
 
       <svg viewBox="0 0 500 220" preserveAspectRatio="none" style={{
-        position: "absolute", bottom: 0, left: 0, width: "100%", height: "16vh", opacity: 0.6, pointerEvents: "none",
+        position: "absolute", bottom: 0, left: 0, width: "100%", height: "16dvh", opacity: 0.6, pointerEvents: "none",
       }}>
         <defs>
           <linearGradient id="waveGradLogin" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -4796,7 +4865,7 @@ function StaffView({ staffRecord, onLogout }) {
   });
 
   return (
-    <div style={{ minHeight: "100vh", background: "#E8EAEF", fontFamily: "'Inter', sans-serif", padding: "24px 16px" }}>
+    <div style={{ minHeight: "100dvh", background: "#E8EAEF", fontFamily: "'Inter', sans-serif", padding: "24px 16px" }}>
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 34 }} />
@@ -5010,7 +5079,7 @@ function UploadPromotionModal({ onClose, onUploaded }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 55, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88dvh", overflowY: "auto", borderRadius: 20, padding: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <SectionLabel>Add a promotion</SectionLabel>
           <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
@@ -5187,8 +5256,8 @@ function IntakeForm({ email, patientId, onFinish }) {
 
   if (step === "hhiePrompt") {
     return (
-      <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
-        <div style={{
+      <div className="ah-phone-page" style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+        <div className="ah-phone-shell" style={{
           width: "100%", maxWidth: 390, background: "#F4F5F8", borderRadius: 34, border: "8px solid #1B2430",
           boxShadow: "0 24px 60px rgba(27,36,48,0.25)", padding: 32, textAlign: "center",
         }}>
@@ -5218,7 +5287,7 @@ function IntakeForm({ email, patientId, onFinish }) {
 
   if (step === "hhieRunning") {
     return (
-      <div style={{ minHeight: "100vh", background: "#E8EAEF" }}>
+      <div style={{ minHeight: "100dvh", background: "#E8EAEF" }}>
         <QuestionnaireRunner
           q={hhieQ}
           onClose={onFinish}
@@ -5232,9 +5301,9 @@ function IntakeForm({ email, patientId, onFinish }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
-      <div style={{
-        width: "100%", maxWidth: 390, maxHeight: "92vh", background: "#F4F5F8", borderRadius: 34,
+    <div className="ah-phone-page" style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+      <div className="ah-phone-shell" style={{
+        width: "100%", maxWidth: 390, maxHeight: "92dvh", background: "#F4F5F8", borderRadius: 34,
         border: "8px solid #1B2430", boxShadow: "0 24px 60px rgba(27,36,48,0.25)", display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         <div style={{ padding: "24px 20px 14px", textAlign: "center", borderBottom: "1px solid #E3E7EE" }}>
@@ -5441,8 +5510,8 @@ function PaymentReturnScreen({ status, onContinue }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
-      <div style={{
+    <div className="ah-phone-page" style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px 12px" }}>
+      <div className="ah-phone-shell" style={{
         width: "100%", maxWidth: 390, background: "#F4F5F8", borderRadius: 34, border: "8px solid #1B2430",
         boxShadow: "0 24px 60px rgba(27,36,48,0.25)", padding: 32, textAlign: "center",
       }}>
@@ -5608,7 +5677,7 @@ export default function AmazingHearingApp() {
 
   if (phase === "splash") {
     return (
-      <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <SplashScreen onDone={handleSplashDone} />
       </div>
     );
@@ -5616,7 +5685,7 @@ export default function AmazingHearingApp() {
 
   if (phase === "login") {
     return (
-      <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <OtpLogin onLogin={handleLogin} />
         <button
           onClick={() => setPinGateOpen(true)}
@@ -5648,7 +5717,7 @@ export default function AmazingHearingApp() {
 
   if (!bundle) {
     return (
-      <div style={{ minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", color: "#64707E" }}>
+      <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", color: "#64707E" }}>
         Loading your information...
       </div>
     );
@@ -5657,11 +5726,11 @@ export default function AmazingHearingApp() {
   const { profile, audiogramHistory, sin, devices, appointments, documents, datalog } = bundle;
 
   return (
-    <div style={{
-      minHeight: "100vh", background: "#E8EAEF", display: "flex", alignItems: "center",
+    <div className="ah-phone-page" style={{
+      minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center",
       justifyContent: "center", padding: "24px 12px", fontFamily: "'Inter', sans-serif",
     }}>
-      <div style={{
+      <div className="ah-phone-shell" style={{
         width: "100%", maxWidth: 390, height: 780, background: "#F4F5F8",
         borderRadius: 34, border: "8px solid #1B2430", boxShadow: "0 24px 60px rgba(27,36,48,0.25)",
         display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
@@ -5691,7 +5760,7 @@ export default function AmazingHearingApp() {
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={() => setCheckoutOpen(true)} />}
-          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={refreshBundle} />}
+          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={refreshBundle} cart={cart} setCart={setCart} />}
           {tab === "forms" && <ProfileTab profile={profile} patientId={patientId} onLogout={handleLogout} onProfileUpdated={refreshBundle} onEditProfile={() => setEditProfileOpen(true)} />}
         </div>
 
@@ -5710,6 +5779,9 @@ export default function AmazingHearingApp() {
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0, background: "#FFFFFF",
           borderTop: "1px solid #E3E7EE", display: "flex", padding: "10px 2px 16px",
+          // Adds extra bottom padding on notched phones (iPhone home-indicator gesture bar etc.)
+          // so the nav labels never sit under the device's own reserved safe area.
+          paddingBottom: "calc(16px + env(safe-area-inset-bottom))",
         }}>
           {tabs.map(({ key, label, icon: Icon }) => {
             const isActive = tab === key;
