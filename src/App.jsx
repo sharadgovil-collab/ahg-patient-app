@@ -107,7 +107,7 @@ const DEFAULT_PROFILE = {
   significantOtherName: "",
   significantOtherRelation: "",
   clinic: "Amazing Hearing -- Novena",
-  audiologist: "Dr. Sharad Govil",
+  audiologist: "Dr. Sharad Govil, Chief Audiologist",
 };
 
 const DEFAULT_APPOINTMENTS = [
@@ -338,8 +338,8 @@ const QUESTIONNAIRES = [
 const GUIDES = [
   { q: "How do I clean my hearing aids?", a: "Wipe the device daily with a dry soft cloth. Never use water, alcohol or wet wipes. Use the brush provided to clear wax from the microphone and receiver openings each evening." },
   { q: "How do I charge my devices overnight?", a: "Place both aids in the charger before bed, indicator lights should turn red then green. A full charge gives about 24 hours of use, including 5+ hours of streaming." },
-  { q: "What do I do if I hear whistling or feedback?", a: "This usually means the dome or earmould isn't sealing properly, or there's wax buildup. Reseat the device gently in your ear. If it continues, message your audiologist -- it's a quick fix at clinic." },
-  { q: "My hearing aid isn't turning on -- what now?", a: "Confirm it's fully charged, and check the charging contacts are clean and dry. If it still won't power on after a full charge cycle, contact your audiologist to arrange a check." },
+  { q: "What do I do if I hear whistling or feedback?", a: "This usually means the dome or earmould isn't sealing properly, or there's wax buildup. Reseat the device gently in your ear. If it continues, message your clinician -- it's a quick fix at clinic." },
+  { q: "My hearing aid isn't turning on -- what now?", a: "Confirm it's fully charged, and check the charging contacts are clean and dry. If it still won't power on after a full charge cycle, contact your clinician to arrange a check." },
   { q: "Can I wear my hearing aids in the rain or shower?", a: "Most Phonak Paradise devices are IP68 rated for splash and light rain, but avoid full submersion, swimming or showering with them in." },
 ];
 
@@ -360,12 +360,12 @@ const LACE_PRODUCT = {
     "Uses your actual audiogram and speech-in-noise results to build a training plan tuned to your ears -- not a generic program.",
     "Each session adapts in real time: exercises get harder as you improve, easier if you're struggling, so you're always training at the right level.",
     "Covers speech-in-noise, rapid speech, competing speakers, and music -- the situations patients say are hardest in daily life.",
-    "Progress syncs to your Amazing Hearing profile so your audiologist can see how you're doing at your next review.",
+    "Progress syncs to your Amazing Hearing profile so your clinician can see how you're doing at your next review.",
   ],
   benefits: [
     "20 structured sessions, 15-20 minutes each",
     "Personalized difficulty based on your hearing profile",
-    "Progress reports shared with your audiologist",
+    "Progress reports shared with your clinician",
     "Lifetime access to this training set",
   ],
 };
@@ -379,11 +379,11 @@ const DBFS_PRODUCT = {
   how: [
     "A short, structured digital screen that looks at memory, attention, and processing speed -- the cognitive functions most linked to everyday hearing performance.",
     "Takes about 15-20 minutes on a tablet or computer at the clinic.",
-    "Results are reviewed by your audiologist alongside your hearing profile, since hearing and cognitive health are closely connected.",
+    "Results are reviewed by your clinician alongside your hearing profile, since hearing and cognitive health are closely connected.",
   ],
   benefits: [
     "Backed by Neurowyzer's validated cognitive screening tools",
-    "Results discussed with your audiologist at your next visit",
+    "Results discussed with your clinician at your next visit",
     "Helps flag early signs of cognitive change worth following up on",
   ],
 };
@@ -574,7 +574,7 @@ function hearingDifficulty(degree) {
     case "Profound Hearing Loss":
       return "Unable to hear conversational speech reliably; may rely on powerful amplification, cochlear implants, or sign language.";
     default:
-      return "Your audiologist will walk through what this means for you at your next review.";
+      return "Your clinician will walk through what this means for you at your next review.";
   }
 }
 
@@ -1735,7 +1735,7 @@ function TrainTab({ cognitive, cart, setCart }) {
         <Card style={{ display: "flex", gap: 12, alignItems: "flex-start", marginTop: 10 }}>
           <Smartphone size={17} color="#1E3A6D" style={{ marginTop: 2, flexShrink: 0 }} />
           <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", lineHeight: 1.6 }}>
-            LACE AI Pro training runs in its own app. Once you purchase, a link will be sent to you to download <strong>LACE AI</strong> from the App Store or Google Play and sign in with your email or mobile number. Your Audiologist or Senior Hearing Aid Specialist will be happy to show how to use the training program.
+            LACE AI Pro training runs in its own app. Once you purchase, a link will be sent to you to download <strong>LACE AI</strong> from the App Store or Google Play and sign in with your email or mobile number. Your clinician will be happy to show how to use the training program.
           </div>
         </Card>
       </div>
@@ -2249,7 +2249,7 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
         </div>
 
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", lineHeight: 1.6, marginBottom: 18 }}>
-          Add a photo or PDF that might help your audiologist at your next consultation.
+          Add a photo or PDF that might help your clinician at your next consultation.
         </p>
 
         <FieldRow label="Title"><input style={inputStyle} placeholder="e.g. GP referral letter" value={title} onChange={(e) => setTitle(e.target.value)} /></FieldRow>
@@ -2294,7 +2294,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "#fff", fontWeight: 500 }}>{profile.audiologist}</div>
-            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#B7C4DA" }}>{"Your audiologist . " + profile.clinic}</div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#B7C4DA" }}>{"Your clinician . " + profile.clinic}</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -3743,7 +3743,12 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
                   {CLINICS.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </FieldRow>
-              <FieldRow label="Audiologist"><input style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)} /></FieldRow>
+              <FieldRow label="Clinician">
+                <select style={inputStyle} value={draft.profile.audiologist} onChange={(e) => setField("audiologist", e.target.value)}>
+                  <option value=""></option>
+                  {CLINICIANS.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </FieldRow>
 
               {canDelete && (
                 <div style={{ marginTop: 28, paddingTop: 18, borderTop: "1px solid #F0EFEA" }}>
@@ -4679,6 +4684,19 @@ const APPOINTMENT_TYPES = [
 ];
 const CLINICS = ["Bedok", "Chinatown", "Jurong", "Novena", "Orchard", "Paya Lebar", "Serangoon (Nex)"];
 
+// The patient-facing "Care" tab and Staff Admin both call this role "Clinician" --
+// not everyone on the list holds the title Audiologist (some are Hearing Aid
+// Specialists), so "Clinician" is the accurate umbrella term for the field.
+const CLINICIANS = [
+  "Chongwei Low, Senior Audiologist",
+  "Dr. Sharad Govil, Chief Audiologist",
+  "Ivy Ng, Senior Hearing Aid Specialist",
+  "Rakshitha Sridharan, Trainee Audiologist",
+  "Raynee Wu, Senior Hearing Aid Specialist",
+  "Sean Lee, Senior Hearing Aid Specialist",
+  "Zu Xuan Lee, Senior Audiologist",
+];
+
 // Weekly hours per clinic, indexed Sun(0)..Sat(6). null = closed that day.
 const CLINIC_HOURS = {
   "Bedok": [null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
@@ -4813,7 +4831,7 @@ function IntakeForm({ email, patientId, onFinish }) {
             One quick screening?
           </div>
           <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, marginBottom: 24 }}>
-            While you're here -- a 10-question hearing screening takes about 2 minutes and helps your audiologist prepare for your visit.
+            While you're here -- a 10-question hearing screening takes about 2 minutes and helps your clinician prepare for your visit.
           </p>
           <button onClick={() => setStep("hhieRunning")} style={{
             width: "100%", padding: "13px 0", borderRadius: 12, background: "#E8631E", color: "#fff",
