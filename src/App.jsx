@@ -2845,6 +2845,174 @@ async function exportQuestionnairePDF(patientName, q, record) {
   doc.save(q.short + "_" + safeName + ".pdf");
 }
 
+/* ---------------------------------------------------------
+   TAX INVOICE PDF -- generated automatically right after a shop
+   checkout succeeds, matching AHG's standard invoice format.
+   GST_RATE mirrors api/create-checkout-session.js: all charged
+   totals are GST-inclusive, so subtotal/GST are backed out of the
+   grand total rather than re-derived per line item.
+--------------------------------------------------------- */
+const INVOICE_GST_RATE = 0.09;
+
+const INVOICE_TERMS = [
+  {
+    heading: "Non-Refundable & Non Return Policy",
+    body: "Please take note that Hearing Aids are Class B Medical Device. Goods sold are not returnable, not refundable, or not exchangeable unless you received an incorrect item(s) or any factory defected item(s), otherwise it will not be accepted for return. We regret to inform you that we will not be able to accept items that do not meet these requirements. Any used and damaged items due to wear and tear are strictly non-exchangeable and non-refundable -- there are no exceptions to this.",
+  },
+  {
+    heading: "Warranty Policy",
+    body: "We provide a warranty on the Hearing Aids in the event of defects in workmanship or materials. Hearing Aids, therefore, at our discretion, may be replaced from new or serviceable used parts, or repaired using new or refurbished replacement parts. For hearing Aids that require service, please contact us for assistance. Hearing Aids that malfunction must be repaired by a qualified technician. Do not attempt to open the case of hearing aids, as this will invalidate the warranty.",
+  },
+  {
+    heading: "Repair Policy",
+    body: "All repairs will take approx. 7 to 14 working days. Hearing Aids is considered \"Beyond Economical Repair\" if: I) Shell & faceplate are damaged, II) No parts available. All repairs come with a 3-month warranty.",
+  },
+];
+
+function buildInvoiceOrderJson(order, totals) {
+  return { items: order.items, ...totals };
+}
+
+async function generateInvoicePDF({ invoiceNumber, patientName, order, totals, card }) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 42;
+  const rightColX = 340;
+  const rightColW = pageWidth - marginX - rightColX;
+
+  doc.addImage(LOGO_SRC, "PNG", marginX, 34, 118, 72);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Amazing Hearing Group Pte. Ltd", rightColX, 44, { maxWidth: rightColW });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  const companyLines = [
+    "Company/GST Reg. No.: 202219111Z", "8 Sinaran Drive", "02-01 Novena Specialist Centre",
+    "Singapore 307470", "Phone: 6285 3132", "hello@amazinghearing.com",
+  ];
+  companyLines.forEach((line, i) => doc.text(line, rightColX, 60 + i * 12));
+
+  let y = 150;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Bill to:", marginX, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(patientName, marginX, y + 15);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text("Tax Invoice", rightColX, y);
+
+  const tableY = y + 14;
+  const rowH = 18;
+  const labelW = 100;
+  [["Invoice Number", "APP-" + String(invoiceNumber).padStart(6, "0")], ["Date", formatDateDMY(new Date().toISOString().slice(0, 10))]].forEach((row, i) => {
+    const ry = tableY + i * rowH;
+    doc.setDrawColor(200, 205, 214);
+    doc.rect(rightColX, ry, labelW, rowH);
+    doc.rect(rightColX + labelW, ry, rightColW - labelW, rowH);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text(row[0], rightColX + 6, ry + 12.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row[1]), rightColX + labelW + rightColW - labelW - 6, ry + 12.5, { align: "right" });
+  });
+
+  y = 235;
+  doc.setDrawColor(27, 36, 48);
+  doc.setLineWidth(1);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 15;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Description", marginX, y);
+  doc.text("Qty", 380, y, { align: "right" });
+  doc.text("Unit", 460, y, { align: "right" });
+  doc.text("Extended", pageWidth - marginX, y, { align: "right" });
+  y += 6;
+  doc.setLineWidth(0.75);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 16;
+
+  doc.setFont("helvetica", "normal");
+  order.items.forEach((item) => {
+    doc.setTextColor(27, 36, 48);
+    const nameLines = doc.splitTextToSize(item.name, 300);
+    doc.text(nameLines, marginX, y);
+    doc.text(String(item.qty), 380, y, { align: "right" });
+    doc.text(item.price.toFixed(2), 460, y, { align: "right" });
+    doc.text((item.price * item.qty).toFixed(2), pageWidth - marginX, y, { align: "right" });
+    y += Math.max(nameLines.length, 1) * 12 + 8;
+  });
+
+  doc.setDrawColor(210, 215, 222);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 18;
+
+  const totalRows = [
+    ["Subtotal", totals.subtotal],
+    ["GST@" + (INVOICE_GST_RATE * 100) + "%", totals.gst],
+    ["Total", totals.total],
+  ];
+  totalRows.forEach(([label, val], i) => {
+    doc.setFont("helvetica", i === 2 ? "bold" : "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(27, 36, 48);
+    doc.text(label, 400, y, { align: "right" });
+    doc.text("S$" + val.toFixed(2), pageWidth - marginX, y, { align: "right" });
+    y += 15;
+  });
+
+  const paidLabel = card ? "Card " + card.brand.toUpperCase() + " \u2022\u2022\u2022\u2022 " + card.last4 : "Paid via Stripe";
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  doc.text(paidLabel, 400, y, { align: "right" });
+  doc.text("-S$" + totals.total.toFixed(2), pageWidth - marginX, y, { align: "right" });
+  y += 20;
+
+  doc.setDrawColor(27, 36, 48);
+  doc.setLineWidth(0.75);
+  doc.line(400, y - 8, pageWidth - marginX, y - 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Balance", 400, y, { align: "right" });
+  doc.text("S$0.00", pageWidth - marginX, y, { align: "right" });
+  y += 30;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Thank you for your purchase", marginX, y);
+  y += 22;
+
+  doc.setFontSize(9.5);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Amazing Hearing Group Sales Terms & Policies:", marginX, y);
+  y += 16;
+
+  INVOICE_TERMS.forEach((term) => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text(term.heading, marginX, y);
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(70, 80, 92);
+    const lines = doc.splitTextToSize(term.body, pageWidth - marginX * 2);
+    doc.text(lines, marginX, y);
+    y += lines.length * 11 + 14;
+    doc.setTextColor(27, 36, 48);
+  });
+
+  return doc.output("blob");
+}
+
 function QuestionnaireHistoryCard({ patientName, record }) {
   const [open, setOpen] = useState(false);
   const q = QUESTIONNAIRES.find((x) => x.id === record.questionnaireId);
@@ -4318,13 +4486,60 @@ function IntakeForm({ email, patientId, onFinish }) {
 --------------------------------------------------------- */
 function PaymentReturnScreen({ status, onContinue }) {
   const [order, setOrder] = useState(null);
+  const [invoiceState, setInvoiceState] = useState("idle"); // idle | working | done | error
 
   useEffect(() => {
+    let raw = null;
     try {
-      const raw = sessionStorage.getItem("ahg_pending_order");
-      if (raw) setOrder(JSON.parse(raw));
+      raw = sessionStorage.getItem("ahg_pending_order");
       sessionStorage.removeItem("ahg_pending_order");
     } catch (e) { /* ignore */ }
+    const parsedOrder = raw ? JSON.parse(raw) : null;
+    if (parsedOrder) setOrder(parsedOrder);
+
+    if (status !== "success" || !parsedOrder) return;
+
+    (async () => {
+      setInvoiceState("working");
+      try {
+        const user = await db.getCurrentUser();
+        if (!user) throw new Error("not signed in");
+        const patientRow = await db.resolveMyPatientRecord(user);
+        const patientName = (patientRow.first_name + " " + patientRow.last_name).trim() || parsedOrder.patientName;
+
+        const sessionId = new URLSearchParams(window.location.search).get("session_id");
+        let card = null;
+        let verifiedTotal = parsedOrder.total;
+        if (sessionId) {
+          try {
+            const res = await fetch("/api/get-checkout-session?session_id=" + encodeURIComponent(sessionId));
+            const data = await res.json();
+            if (data.paid && data.amountTotal != null) verifiedTotal = data.amountTotal;
+            if (data.card) card = data.card;
+          } catch (e) { /* fall back to the client-side total if verification can't be reached */ }
+        }
+
+        const subtotal = verifiedTotal / (1 + INVOICE_GST_RATE);
+        const gst = verifiedTotal - subtotal;
+        const totals = { subtotal, gst, total: verifiedTotal };
+
+        const invoice = await db.insertInvoiceRecord({
+          patientId: patientRow.id,
+          orderJson: buildInvoiceOrderJson(parsedOrder, totals),
+          stripeSessionId: sessionId,
+          amountTotal: verifiedTotal, gstAmount: gst, subtotal,
+        });
+
+        const blob = await generateInvoicePDF({ invoiceNumber: invoice.invoice_number, patientName, order: parsedOrder, totals, card });
+        const fileName = "Invoice_APP-" + String(invoice.invoice_number).padStart(6, "0") + ".pdf";
+        await db.attachInvoiceDocument({ invoiceId: invoice.id, patientId: patientRow.id, blob, fileName });
+
+        setInvoiceState("done");
+      } catch (e) {
+        console.error("couldn't generate invoice", e);
+        setInvoiceState("error");
+      }
+    })();
   }, []);
 
   const waLink = () => {
@@ -4363,6 +4578,17 @@ function PaymentReturnScreen({ status, onContinue }) {
                   <MessageCircle size={16} /> Send order to clinic
                 </div>
               </a>
+            )}
+            {order && (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 14,
+                fontFamily: "'Inter', sans-serif", fontSize: 11.5,
+                color: invoiceState === "error" ? "#A8452F" : "#8A96A3",
+              }}>
+                {invoiceState === "working" && "Preparing your invoice..."}
+                {invoiceState === "done" && (<><FileText size={12} /> Invoice saved to your Documents</>)}
+                {invoiceState === "error" && "Couldn't save your invoice -- contact the clinic if you need one."}
+              </div>
             )}
             <div onClick={onContinue} style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", cursor: "pointer" }}>
               Continue to app

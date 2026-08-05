@@ -383,6 +383,44 @@ export async function deletePatient(patientId) {
   if (error) throw error;
 }
 
+// Invoicing happens in two steps because the invoice NUMBER (an auto-incrementing
+// DB identity column, allocated atomically so two simultaneous checkouts can never
+// collide) has to exist before we can print it on the PDF itself.
+//
+// 1) insertInvoiceRecord -- reserves the next invoice number and stores the order
+//    snapshot for audit purposes.
+// 2) attachInvoiceDocument -- once the PDF has been generated (now that we know the
+//    invoice number), uploads it into the same private bucket patient documents use,
+//    files it under the "Invoices" category so it shows up in the patient's Care >
+//    Documents tab automatically, and links it back onto the invoice row.
+export async function insertInvoiceRecord({ patientId, orderJson, stripeSessionId, amountTotal, gstAmount, subtotal }) {
+  const { data: invoice, error } = await supabase.from("invoices").insert({
+    patient_id: patientId, order_json: orderJson, stripe_session_id: stripeSessionId || null,
+    amount_total: amountTotal, gst_amount: gstAmount, subtotal,
+  }).select().single();
+  if (error) throw error;
+  return invoice;
+}
+
+export async function attachInvoiceDocument({ invoiceId, patientId, blob, fileName }) {
+  const path = patientId + "/" + Date.now() + "_" + fileName;
+  const { error: uploadError } = await supabase.storage.from("patient-documents").upload(path, blob, {
+    upsert: true, contentType: "application/pdf",
+  });
+  if (uploadError) throw uploadError;
+
+  const { data: doc, error: docError } = await supabase.from("documents").insert({
+    patient_id: patientId, title: fileName, category: "Invoices",
+    doc_date: new Date().toISOString().slice(0, 10), url: path, is_storage_path: true,
+  }).select().single();
+  if (docError) throw docError;
+
+  const { error: updateError } = await supabase.from("invoices").update({ document_id: doc.id }).eq("id", invoiceId);
+  if (updateError) throw updateError;
+
+  return { documentId: doc.id, path };
+}
+
 export async function savePhotoUrl(patientId, photoPath) {
   const { error } = await supabase
     .from("patients")
