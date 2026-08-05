@@ -2873,7 +2873,7 @@ function buildInvoiceOrderJson(order, totals) {
   return { items: order.items, ...totals };
 }
 
-async function generateInvoicePDF({ invoiceNumber, patientName, order, totals, card }) {
+async function generateInvoicePDF({ invoiceNumber, patientName, order, totals, card, paymentLabel }) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -2969,7 +2969,7 @@ async function generateInvoicePDF({ invoiceNumber, patientName, order, totals, c
     y += 15;
   });
 
-  const paidLabel = card ? "Card " + card.brand.toUpperCase() + " \u2022\u2022\u2022\u2022 " + card.last4 : "Paid via Stripe";
+  const paidLabel = paymentLabel || (card ? "Card " + card.brand.toUpperCase() + " \u2022\u2022\u2022\u2022 " + card.last4 : "Paid via Stripe");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(70, 80, 92);
@@ -3144,6 +3144,129 @@ function DeletePatientModal({ patientId, patientName, onClose, onDeleted }) {
   );
 }
 
+function CreateInvoiceModal({ patientId, patientName, onClose, onCreated }) {
+  const [items, setItems] = useState([{ name: "", qty: 1, price: "" }]);
+  const [paymentLabel, setPaymentLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const setItem = (i, key, val) => {
+    const next = [...items];
+    next[i] = { ...next[i], [key]: val };
+    setItems(next);
+  };
+  const addRow = () => setItems([...items, { name: "", qty: 1, price: "" }]);
+  const removeRow = (i) => setItems(items.filter((_, idx) => idx !== i));
+
+  const validItems = items
+    .map((it) => ({ name: it.name.trim(), qty: Number(it.qty) || 0, price: Number(it.price) || 0 }))
+    .filter((it) => it.name && it.qty > 0 && it.price >= 0);
+  const total = validItems.reduce((sum, it) => sum + it.price * it.qty, 0);
+  const canCreate = validItems.length > 0 && total > 0;
+
+  const handleCreate = async () => {
+    if (!canCreate || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const subtotal = total / (1 + INVOICE_GST_RATE);
+      const gst = total - subtotal;
+      const totals = { subtotal, gst, total };
+      const order = { items: validItems, total };
+
+      const invoice = await db.insertInvoiceRecord({
+        patientId, orderJson: buildInvoiceOrderJson(order, totals),
+        stripeSessionId: null, amountTotal: total, gstAmount: gst, subtotal,
+      });
+
+      const blob = await generateInvoicePDF({
+        invoiceNumber: invoice.invoice_number, patientName, order, totals,
+        card: null, paymentLabel: paymentLabel.trim() || "Manually recorded",
+      });
+      const fileName = "Invoice_APP-" + String(invoice.invoice_number).padStart(6, "0") + ".pdf";
+      await db.attachInvoiceDocument({ invoiceId: invoice.id, patientId, blob, fileName });
+
+      onCreated();
+    } catch (e) {
+      setError(e.message || "Couldn't create the invoice -- please try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
+        <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <SectionLabel>Documents</SectionLabel>
+            <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 18, color: "#1B2430" }}>Create invoice for {patientName}</span>
+          </div>
+          <X size={20} color="#64707E" style={{ cursor: "pointer" }} onClick={onClose} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginBottom: 14, lineHeight: 1.5 }}>
+            For purchases made outside the in-app checkout (or ones the automatic invoice missed). Prices are treated as GST-inclusive, same as the shop.
+          </div>
+
+          {items.map((it, i) => (
+            <div key={i} style={{ border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 12 }}>
+              {items.length > 1 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
+                  <Trash2 size={14} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => removeRow(i)} />
+                </div>
+              )}
+              <FieldRow label="Item description">
+                <input style={inputStyle} value={it.name} onChange={(e) => setItem(i, "name", e.target.value)} placeholder="e.g. Hearing Aid Battery (6pcs)" />
+              </FieldRow>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ width: 90 }}>
+                  <FieldRow label="Qty">
+                    <input type="number" min="1" style={inputStyle} value={it.qty} onChange={(e) => setItem(i, "qty", e.target.value)} />
+                  </FieldRow>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <FieldRow label="Unit price (S$, GST-incl.)">
+                    <input type="number" min="0" step="0.01" style={inputStyle} value={it.price} onChange={(e) => setItem(i, "price", e.target.value)} placeholder="0.00" />
+                  </FieldRow>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button onClick={addRow} style={{
+            width: "100%", padding: "10px 0", borderRadius: 12, border: "1px dashed #C7CDD8", background: "transparent",
+            fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1E3A6D", cursor: "pointer", marginBottom: 16,
+          }}>
+            + Add another item
+          </button>
+
+          <FieldRow label="Payment method (optional)">
+            <input style={inputStyle} value={paymentLabel} onChange={(e) => setPaymentLabel(e.target.value)} placeholder="e.g. Cash, Card ending 4242, Bank transfer" />
+          </FieldRow>
+
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F0EFEA", paddingTop: 12, marginTop: 6, fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14 }}>
+            <span>Total</span>
+            <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{"S$" + total.toFixed(2)}</span>
+          </div>
+
+          {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginTop: 10 }}>{error}</div>}
+        </div>
+
+        <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
+          <button onClick={handleCreate} disabled={!canCreate || busy} style={{
+            width: "100%", padding: "13px 0", borderRadius: 12, border: "none",
+            background: canCreate ? "#1E3A6D" : "#C7CDD8", color: "#fff",
+            fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: canCreate ? "pointer" : "not-allowed",
+          }}>
+            {busy ? "Creating..." : "Create invoice"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const sections = ADMIN_SECTIONS;
   const canDelete = role === "super_admin";
@@ -3153,6 +3276,7 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const patientName = ((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient";
 
   useEffect(() => { setDraft(data); }, [section]);
@@ -3494,10 +3618,17 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
             <>
               <button onClick={() => setUploadOpen(true)} style={{
                 width: "100%", padding: "12px 0", borderRadius: 10, border: "none", background: "#1E3A6D", color: "#fff",
-                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16,
+                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 10,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>
                 <Upload size={15} /> Upload a document (photo or PDF)
+              </button>
+              <button onClick={() => setCreateInvoiceOpen(true)} style={{
+                width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
+                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              }}>
+                <Receipt size={15} /> Create invoice
               </button>
               {draft.documents.length === 0 && (
                 <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", textAlign: "center", padding: "20px 0" }}>No documents uploaded yet.</div>
@@ -3538,6 +3669,13 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
                   patientId={patientId}
                   onClose={() => setUploadOpen(false)}
                   onUploaded={async () => { setUploadOpen(false); await refreshDocuments(); }}
+                />
+              )}
+              {createInvoiceOpen && (
+                <CreateInvoiceModal
+                  patientId={patientId} patientName={patientName}
+                  onClose={() => setCreateInvoiceOpen(false)}
+                  onCreated={async () => { setCreateInvoiceOpen(false); await refreshDocuments(); }}
                 />
               )}
             </>
