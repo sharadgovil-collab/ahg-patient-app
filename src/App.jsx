@@ -2753,6 +2753,7 @@ const ADMIN_SECTIONS = [
   { key: "documents", label: "Documents" },
   { key: "datalog", label: "Datalogging" },
   { key: "questionnaires", label: "Questionnaires" },
+  { key: "invoices", label: "Invoices" },
 ];
 
 // Staff can view and edit everything about a patient -- the one thing they can never
@@ -3013,6 +3014,141 @@ async function generateInvoicePDF({ invoiceNumber, patientName, order, totals, c
   return doc.output("blob");
 }
 
+// A credit note is the proper accounting way to reverse an invoice -- it
+// references the original invoice number and shows the reversed amount,
+// rather than deleting or silently editing the original record.
+async function generateCreditNotePDF({ creditNoteNumber, invoiceNumber, patientName, items, totals, paymentLabel, reason }) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 42;
+  const rightColX = 340;
+  const rightColW = pageWidth - marginX - rightColX;
+
+  doc.addImage(LOGO_SRC, "PNG", marginX, 34, 118, 72);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Amazing Hearing Group Pte. Ltd", rightColX, 44, { maxWidth: rightColW });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  const companyLines = [
+    "Company/GST Reg. No.: 202219111Z", "8 Sinaran Drive", "02-01 Novena Specialist Centre",
+    "Singapore 307470", "Phone: 6285 3132", "hello@amazinghearing.com",
+  ];
+  companyLines.forEach((line, i) => doc.text(line, rightColX, 60 + i * 12));
+
+  let y = 150;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Issued to:", marginX, y);
+  doc.setFont("helvetica", "normal");
+  doc.text(patientName, marginX, y + 15);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text("Credit Note", rightColX, y);
+
+  const tableY = y + 14;
+  const rowH = 18;
+  const labelW = 130;
+  const rows = [
+    ["Credit Note Number", "CN-" + String(creditNoteNumber).padStart(6, "0")],
+    ["Against Invoice", "APP-" + String(invoiceNumber).padStart(6, "0")],
+    ["Date", formatDateDMY(new Date().toISOString().slice(0, 10))],
+  ];
+  rows.forEach((row, i) => {
+    const ry = tableY + i * rowH;
+    doc.setDrawColor(200, 205, 214);
+    doc.rect(rightColX, ry, labelW, rowH);
+    doc.rect(rightColX + labelW, ry, rightColW - labelW, rowH);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.text(row[0], rightColX + 6, ry + 12.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(row[1]), rightColX + labelW + rightColW - labelW - 6, ry + 12.5, { align: "right" });
+  });
+
+  y = 265;
+  doc.setDrawColor(27, 36, 48);
+  doc.setLineWidth(1);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 15;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Description", marginX, y);
+  doc.text("Qty", 380, y, { align: "right" });
+  doc.text("Unit", 460, y, { align: "right" });
+  doc.text("Extended", pageWidth - marginX, y, { align: "right" });
+  y += 6;
+  doc.setLineWidth(0.75);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 16;
+
+  doc.setFont("helvetica", "normal");
+  items.forEach((item) => {
+    doc.setTextColor(27, 36, 48);
+    const nameLines = doc.splitTextToSize(item.name, 300);
+    doc.text(nameLines, marginX, y);
+    doc.text(String(item.qty), 380, y, { align: "right" });
+    doc.text(item.price.toFixed(2), 460, y, { align: "right" });
+    doc.text((item.price * item.qty).toFixed(2), pageWidth - marginX, y, { align: "right" });
+    y += Math.max(nameLines.length, 1) * 12 + 8;
+  });
+
+  doc.setDrawColor(210, 215, 222);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 18;
+
+  const totalRows = [
+    ["Subtotal", totals.subtotal],
+    ["GST@" + (INVOICE_GST_RATE * 100) + "%", totals.gst],
+    ["Total Credit", totals.total],
+  ];
+  totalRows.forEach(([label, val], i) => {
+    doc.setFont("helvetica", i === 2 ? "bold" : "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(27, 36, 48);
+    doc.text(label, 400, y, { align: "right" });
+    doc.text("S$" + val.toFixed(2), pageWidth - marginX, y, { align: "right" });
+    y += 15;
+  });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  doc.text(paymentLabel, 400, y, { align: "right" });
+  doc.text("-S$" + totals.total.toFixed(2), pageWidth - marginX, y, { align: "right" });
+  y += 20;
+
+  doc.setDrawColor(27, 36, 48);
+  doc.setLineWidth(0.75);
+  doc.line(400, y - 8, pageWidth - marginX, y - 8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Balance", 400, y, { align: "right" });
+  doc.text("S$0.00", pageWidth - marginX, y, { align: "right" });
+  y += 30;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(27, 36, 48);
+  doc.text("This credit note confirms a refund against the invoice referenced above.", marginX, y);
+  if (reason) {
+    y += 18;
+    doc.setFontSize(9.5);
+    doc.setTextColor(70, 80, 92);
+    const reasonLines = doc.splitTextToSize("Reason: " + reason, pageWidth - marginX * 2);
+    doc.text(reasonLines, marginX, y);
+  }
+
+  return doc.output("blob");
+}
+
 function QuestionnaireHistoryCard({ patientName, record }) {
   const [open, setOpen] = useState(false);
   const q = QUESTIONNAIRES.find((x) => x.id === record.questionnaireId);
@@ -3083,6 +3219,216 @@ function QuestionnaireHistorySection({ patientName, questionnaires }) {
       {questionnaires.map((r) => (
         <QuestionnaireHistoryCard key={r.id} patientName={patientName} record={r} />
       ))}
+    </>
+  );
+}
+
+function RefundModal({ invoice, patientId, patientName, documents, onClose, onRefunded }) {
+  const items = (invoice.orderJson && invoice.orderJson.items) || [];
+  const remaining = Math.max(0, invoice.amountTotal - invoice.refundedAmount);
+  const [checked, setChecked] = useState(() => new Set(items.map((_, i) => i)));
+  const [amount, setAmount] = useState(remaining.toFixed(2));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const toggleItem = (i) => {
+    const next = new Set(checked);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    setChecked(next);
+    const sum = items.reduce((s, it, idx) => (next.has(idx) ? s + it.price * it.qty : s), 0);
+    setAmount(sum.toFixed(2));
+  };
+
+  const amountNum = Number(amount) || 0;
+  const canSubmit = amountNum > 0 && amountNum <= remaining + 0.005 && !busy;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    setBusy(true);
+    setError("");
+    try {
+      let stripeRefundId = null;
+      if (invoice.stripeSessionId) {
+        const result = await db.refundViaStripe(invoice.stripeSessionId, amountNum, reason);
+        stripeRefundId = result.refundId;
+      }
+
+      const noteItems = items.length
+        ? items.filter((_, i) => checked.has(i))
+        : [{ name: "Refund against Invoice APP-" + String(invoice.invoiceNumber).padStart(6, "0"), qty: 1, price: amountNum }];
+      const finalItems = noteItems.length ? noteItems : [{ name: "Partial refund", qty: 1, price: amountNum }];
+
+      const subtotal = amountNum / (1 + INVOICE_GST_RATE);
+      const gst = amountNum - subtotal;
+      const totals = { subtotal, gst, total: amountNum };
+
+      const note = await db.insertCreditNote({
+        patientId, invoiceId: invoice.id, amount: amountNum, gstAmount: gst, subtotal,
+        reason, itemsJson: finalItems, stripeRefundId,
+      });
+
+      const blob = await generateCreditNotePDF({
+        creditNoteNumber: note.credit_note_number, invoiceNumber: invoice.invoiceNumber, patientName,
+        items: finalItems, totals, reason,
+        paymentLabel: invoice.stripeSessionId ? "Refunded via Stripe" : "Refunded manually",
+      });
+      const fileName = "CreditNote_CN-" + String(note.credit_note_number).padStart(6, "0") + ".pdf";
+      await db.attachCreditNoteDocument({ creditNoteId: note.id, patientId, blob, fileName });
+
+      await db.updateInvoiceRefundedAmount(invoice.id, invoice.refundedAmount + amountNum);
+
+      onRefunded();
+    } catch (e) {
+      setError(e.message || "Couldn't process the refund -- please try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(27,36,48,0.55)", zIndex: 58, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", width: "100%", maxWidth: 390, maxHeight: "88vh", display: "flex", flexDirection: "column", borderRadius: 20 }}>
+        <div style={{ padding: "20px 20px 14px", borderBottom: "1px solid #E3E7EE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <SectionLabel>Invoice APP-{String(invoice.invoiceNumber).padStart(6, "0")}</SectionLabel>
+            <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 18, color: "#1B2430" }}>Issue refund</span>
+          </div>
+          <X size={20} color="#64707E" style={{ cursor: "pointer" }} onClick={onClose} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginBottom: 14, lineHeight: 1.5 }}>
+            {invoice.stripeSessionId
+              ? "This refunds the card on the original Stripe payment and generates a credit note against this invoice."
+              : "This invoice wasn't paid through Stripe, so there's no card to refund automatically -- refund the patient yourself, then record it here so a credit note is generated."}
+          </div>
+
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#1B2430", marginBottom: 10 }}>
+            {"S$" + remaining.toFixed(2) + " remaining refundable of S$" + invoice.amountTotal.toFixed(2) + " total"}
+          </div>
+
+          {items.length > 0 && (
+            <>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1B2430", marginBottom: 8 }}>Items being credited</div>
+              {items.map((it, i) => (
+                <div key={i} onClick={() => toggleItem(i)} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10,
+                  border: checked.has(i) ? "2px solid #1E3A6D" : "1px solid #E3E7EE", cursor: "pointer", marginBottom: 8,
+                }}>
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 4, border: "2px solid " + (checked.has(i) ? "#1E3A6D" : "#C7CDD8"),
+                    background: checked.has(i) ? "#1E3A6D" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    {checked.has(i) && <Check size={11} color="#fff" />}
+                  </div>
+                  <div style={{ flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#1B2430" }}>{it.qty + "x " + it.name}</div>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#64707E" }}>{"S$" + (it.price * it.qty).toFixed(2)}</div>
+                </div>
+              ))}
+            </>
+          )}
+
+          <FieldRow label="Refund amount (S$, GST-incl.)">
+            <input type="number" min="0" max={remaining} step="0.01" style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </FieldRow>
+          <FieldRow label="Reason (optional)">
+            <input style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Returned, faulty item" />
+          </FieldRow>
+
+          {amountNum > remaining && (
+            <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginTop: 4 }}>
+              Can't exceed the S${remaining.toFixed(2)} still refundable.
+            </div>
+          )}
+          {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginTop: 8 }}>{error}</div>}
+        </div>
+
+        <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
+          <button onClick={handleSubmit} disabled={!canSubmit} style={{
+            width: "100%", padding: "13px 0", borderRadius: 12, border: "none",
+            background: canSubmit ? "#C4573F" : "#F0C9BE", color: "#fff",
+            fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, cursor: canSubmit ? "pointer" : "not-allowed",
+          }}>
+            {busy ? "Processing..." : "Refund S$" + amountNum.toFixed(2)}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InvoiceHistorySection({ patientId, patientName, invoices, creditNotes, documents, canRefund, onChanged }) {
+  const [refunding, setRefunding] = useState(null);
+
+  if (!invoices || invoices.length === 0) {
+    return (
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", textAlign: "center", padding: "20px 0" }}>
+        No invoices yet.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {invoices.map((inv) => {
+        const doc = documents.find((d) => d.id === inv.documentId);
+        const remaining = Math.max(0, inv.amountTotal - inv.refundedAmount);
+        const notes = creditNotes.filter((n) => n.invoiceId === inv.id);
+        return (
+          <div key={inv.id} style={{ border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13.5, color: "#1B2430" }}>
+                  {"APP-" + String(inv.invoiceNumber).padStart(6, "0")}
+                </div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 3 }}>
+                  {formatDateDMY(inv.createdAt.slice(0, 10)) + " . S$" + inv.amountTotal.toFixed(2)}
+                  {inv.refundedAmount > 0 && (" . S$" + inv.refundedAmount.toFixed(2) + " refunded")}
+                </div>
+              </div>
+              {doc && <DocumentViewButton doc={doc} />}
+            </div>
+
+            {notes.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #F0EFEA" }}>
+                {notes.map((n) => {
+                  const ndoc = documents.find((d) => d.id === n.documentId);
+                  return (
+                    <div key={n.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#64707E" }}>
+                        {"CN-" + String(n.creditNoteNumber).padStart(6, "0") + " . S$" + n.amount.toFixed(2) + " credited"}
+                      </div>
+                      {ndoc && <DocumentViewButton doc={ndoc} />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {canRefund && remaining > 0 && (
+              <button onClick={() => setRefunding(inv)} style={{
+                marginTop: 10, width: "100%", padding: "9px 0", borderRadius: 10, border: "1px solid #F0C9BE",
+                background: "#FCEEE9", color: "#C4573F", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, cursor: "pointer",
+              }}>
+                {"Refund (S$" + remaining.toFixed(2) + " available)"}
+              </button>
+            )}
+            {remaining <= 0 && inv.refundedAmount > 0 && (
+              <div style={{ marginTop: 10, textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3" }}>
+                Fully refunded
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {refunding && (
+        <RefundModal
+          invoice={refunding} patientId={patientId} patientName={patientName} documents={documents}
+          onClose={() => setRefunding(null)}
+          onRefunded={async () => { setRefunding(null); await onChanged(); }}
+        />
+      )}
     </>
   );
 }
@@ -3286,6 +3632,13 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
       const fresh = await db.fetchPatientBundle(patientId);
       setDraft((p) => ({ ...p, documents: fresh.documents }));
     } catch (e) { console.error("failed to refresh documents", e); }
+  };
+
+  const refreshBilling = async () => {
+    try {
+      const fresh = await db.fetchPatientBundle(patientId);
+      setDraft((p) => ({ ...p, documents: fresh.documents, invoices: fresh.invoices, creditNotes: fresh.creditNotes }));
+    } catch (e) { console.error("failed to refresh billing", e); }
   };
 
   const commit = () => {
@@ -3675,7 +4028,7 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
                 <CreateInvoiceModal
                   patientId={patientId} patientName={patientName}
                   onClose={() => setCreateInvoiceOpen(false)}
-                  onCreated={async () => { setCreateInvoiceOpen(false); await refreshDocuments(); }}
+                  onCreated={async () => { setCreateInvoiceOpen(false); await refreshBilling(); }}
                 />
               )}
             </>
@@ -3691,13 +4044,22 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
 
           {section === "questionnaires" && (
             <QuestionnaireHistorySection
-              patientName={((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient"}
+              patientName={patientName}
               questionnaires={draft.questionnaires || []}
+            />
+          )}
+
+          {section === "invoices" && (
+            <InvoiceHistorySection
+              patientId={patientId} patientName={patientName}
+              invoices={draft.invoices || []} creditNotes={draft.creditNotes || []} documents={draft.documents || []}
+              canRefund={canDelete}
+              onChanged={refreshBilling}
             />
           )}
         </div>
 
-        {section !== "questionnaires" && (
+        {section !== "questionnaires" && section !== "invoices" && (
           <div style={{ padding: 16, borderTop: "1px solid #E3E7EE" }}>
             <button onClick={commit} style={{
               width: "100%", padding: "13px 0", borderRadius: 12, background: savedFlash === section ? "#4C6349" : "#1E3A6D",

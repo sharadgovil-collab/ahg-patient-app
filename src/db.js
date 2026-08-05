@@ -132,7 +132,7 @@ export function mapProfileRow(row) {
 }
 
 export async function fetchPatientBundle(patientId) {
-  const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes, questionnairesRes] = await Promise.all([
+  const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes, questionnairesRes, invoicesRes, creditNotesRes] = await Promise.all([
     supabase.from("patients").select("*").eq("id", patientId).single(),
     supabase.from("audiograms").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
     supabase.from("sin_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
@@ -142,6 +142,8 @@ export async function fetchPatientBundle(patientId) {
     supabase.from("documents").select("*").eq("patient_id", patientId),
     supabase.from("datalog").select("*").eq("patient_id", patientId).maybeSingle(),
     supabase.from("questionnaire_responses").select("*").eq("patient_id", patientId).order("completed_at", { ascending: false }),
+    supabase.from("invoices").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
+    supabase.from("credit_notes").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
   ]);
 
   return {
@@ -171,6 +173,16 @@ export async function fetchPatientBundle(patientId) {
     questionnaires: (questionnairesRes.data || []).map((r) => ({
       id: r.id, questionnaireId: r.questionnaire_id, score: r.score, maxScore: r.max_score,
       band: r.band, bandDetail: r.band_detail, completedAt: r.completed_at, answers: r.answers,
+    })),
+    invoices: (invoicesRes.data || []).map((r) => ({
+      id: r.id, invoiceNumber: r.invoice_number, orderJson: r.order_json, stripeSessionId: r.stripe_session_id,
+      amountTotal: r.amount_total, gstAmount: r.gst_amount, subtotal: r.subtotal,
+      refundedAmount: r.refunded_amount || 0, documentId: r.document_id, createdAt: r.created_at,
+    })),
+    creditNotes: (creditNotesRes.data || []).map((r) => ({
+      id: r.id, creditNoteNumber: r.credit_note_number, invoiceId: r.invoice_id, amount: r.amount,
+      gstAmount: r.gst_amount, subtotal: r.subtotal, reason: r.reason, itemsJson: r.items_json,
+      stripeRefundId: r.stripe_refund_id, documentId: r.document_id, createdAt: r.created_at,
     })),
   };
 }
@@ -419,6 +431,53 @@ export async function attachInvoiceDocument({ invoiceId, patientId, blob, fileNa
   if (updateError) throw updateError;
 
   return { documentId: doc.id, path };
+}
+
+// Same two-step pattern as invoices, plus a running total on the original
+// invoice (refunded_amount) so the UI can always show how much of it is left
+// to refund and never let staff over-refund across multiple credit notes.
+export async function insertCreditNote({ patientId, invoiceId, amount, gstAmount, subtotal, reason, itemsJson, stripeRefundId }) {
+  const { data: note, error } = await supabase.from("credit_notes").insert({
+    patient_id: patientId, invoice_id: invoiceId, amount, gst_amount: gstAmount, subtotal,
+    reason: reason || null, items_json: itemsJson, stripe_refund_id: stripeRefundId || null,
+  }).select().single();
+  if (error) throw error;
+  return note;
+}
+
+export async function attachCreditNoteDocument({ creditNoteId, patientId, blob, fileName }) {
+  const path = patientId + "/" + Date.now() + "_" + fileName;
+  const { error: uploadError } = await supabase.storage.from("patient-documents").upload(path, blob, {
+    upsert: true, contentType: "application/pdf",
+  });
+  if (uploadError) throw uploadError;
+
+  const { data: doc, error: docError } = await supabase.from("documents").insert({
+    patient_id: patientId, title: fileName, category: "Invoices",
+    doc_date: new Date().toISOString().slice(0, 10), url: path, is_storage_path: true,
+  }).select().single();
+  if (docError) throw docError;
+
+  const { error: updateError } = await supabase.from("credit_notes").update({ document_id: doc.id }).eq("id", creditNoteId);
+  if (updateError) throw updateError;
+
+  return { documentId: doc.id, path };
+}
+
+export async function updateInvoiceRefundedAmount(invoiceId, refundedAmount) {
+  const { error } = await supabase.from("invoices").update({ refunded_amount: refundedAmount }).eq("id", invoiceId);
+  if (error) throw error;
+}
+
+export async function refundViaStripe(sessionId, amount, reason) {
+  const res = await fetch("/api/refund-payment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, amount, reason }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Refund failed");
+  return data;
 }
 
 export async function savePhotoUrl(patientId, photoPath) {
