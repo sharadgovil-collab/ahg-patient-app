@@ -822,19 +822,19 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
 
   // Threshold objects are keyed by frequency (e.g. obj[500]), not array
   // position, so extending the tested frequency list never shifts other
-  // values. Splits into runs of consecutive tested points so the connecting
-  // line breaks across untested frequencies instead of assuming 0.
+  // values. Untested frequencies (e.g. 3k/6k not always tested) are simply
+  // skipped -- the line connects straight through to the next tested point
+  // rather than breaking, since a gap there doesn't mean "unknown region",
+  // it just means that in-between point wasn't measured.
   const segmentsFor = (obj) => {
     if (!obj) return [];
-    const segs = [];
-    let cur = [];
+    const pts = [];
     freqs.forEach((f, i) => {
       const v = obj[f];
-      if (!isTested(v) || isNaN(dbFor(v))) { if (cur.length > 1) segs.push(cur); cur = []; return; }
-      cur.push([i, dbFor(v)]);
+      if (!isTested(v) || isNaN(dbFor(v))) return;
+      pts.push([i, dbFor(v)]);
     });
-    if (cur.length > 1) segs.push(cur);
-    return segs;
+    return pts.length > 1 ? [pts] : [];
   };
 
   const dashLen = 900;
