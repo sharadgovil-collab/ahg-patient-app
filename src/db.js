@@ -134,9 +134,12 @@ export function mapProfileRow(row) {
 export async function fetchPatientBundle(patientId) {
   const [profileRes, audioRes, sinRes, cognitiveRes, devicesRes, apptsRes, docsRes, datalogRes, questionnairesRes, invoicesRes, creditNotesRes] = await Promise.all([
     supabase.from("patients").select("*").eq("id", patientId).single(),
-    supabase.from("audiograms").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }),
-    supabase.from("sin_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("cognitive_results").select("*").eq("patient_id", patientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    // Ordered by the actual test date, not when the row was entered into the system --
+    // staff sometimes backfill older results after newer ones already exist, and the
+    // list should always read in real chronological order regardless of entry order.
+    supabase.from("audiograms").select("*").eq("patient_id", patientId).order("test_date", { ascending: false, nullsFirst: false }),
+    supabase.from("sin_results").select("*").eq("patient_id", patientId).order("test_date", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
+    supabase.from("cognitive_results").select("*").eq("patient_id", patientId).order("test_date", { ascending: false, nullsFirst: false }).limit(1).maybeSingle(),
     supabase.from("devices").select("*").eq("patient_id", patientId),
     supabase.from("appointments").select("*").eq("patient_id", patientId),
     supabase.from("documents").select("*").eq("patient_id", patientId),
@@ -148,8 +151,14 @@ export async function fetchPatientBundle(patientId) {
 
   return {
     profile: mapProfileRow(profileRes.data),
+    // Thresholds are stored keyed by frequency (e.g. { "500": 20, "1000": 25 }),
+    // not by array position -- see the matching comment in App.jsx.
     audiogramHistory: (audioRes.data || []).map((a) => ({
-      id: a.id, date: a.test_date, right: a.right_thresholds || [0, 0, 0, 0, 0, 0], left: a.left_thresholds || [0, 0, 0, 0, 0, 0],
+      id: a.id, date: a.test_date,
+      right: a.right_thresholds || {}, left: a.left_thresholds || {},
+      rightACMasked: a.right_ac_masked || {}, leftACMasked: a.left_ac_masked || {},
+      rightBC: a.right_bc || {}, leftBC: a.left_bc || {},
+      rightBCMasked: a.right_bc_masked || {}, leftBCMasked: a.left_bc_masked || {},
     })),
     sin: sinRes.data
       ? { id: sinRes.data.id, srtDb: sinRes.data.srt_db, label: sinRes.data.label, date: sinRes.data.test_date, percentile: sinRes.data.percentile }
@@ -500,7 +509,13 @@ export async function saveAudiogramHistory(patientId, history) {
   const keepIds = history.filter((a) => isUuid(a.id)).map((a) => a.id);
   await supabase.from("audiograms").delete().eq("patient_id", patientId).not("id", "in", `(${keepIds.length ? keepIds.join(",") : "00000000-0000-0000-0000-000000000000"})`);
   for (const a of history) {
-    const row = { patient_id: patientId, test_date: a.date, right_thresholds: a.right, left_thresholds: a.left };
+    const row = {
+      patient_id: patientId, test_date: a.date,
+      right_thresholds: a.right || {}, left_thresholds: a.left || {},
+      right_ac_masked: a.rightACMasked || {}, left_ac_masked: a.leftACMasked || {},
+      right_bc: a.rightBC || {}, left_bc: a.leftBC || {},
+      right_bc_masked: a.rightBCMasked || {}, left_bc_masked: a.leftBCMasked || {},
+    };
     if (isUuid(a.id)) {
       await supabase.from("audiograms").update(row).eq("id", a.id);
     } else {

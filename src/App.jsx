@@ -116,7 +116,7 @@ const DEFAULT_APPOINTMENTS = [
   { id: 3, type: "Tinnitus Consult (CBT-T)", date: "Mon, 6 Apr 2026", time: "9:00 AM", clinic: "AHG Novena Specialist Centre", status: "past" },
 ];
 
-const AUDIOGRAM_FREQS = [250, 500, 1000, 2000, 4000, 8000];
+const AUDIOGRAM_FREQS = [250, 500, 1000, 2000, 3000, 4000, 6000, 8000];
 
 const DEFAULT_AUDIOGRAM_HISTORY = [
   { id: 1, date: "2 Jun 2026", right: [15, 20, 25, 35, 45, 50], left: [20, 25, 30, 40, 55, 60] },
@@ -536,10 +536,33 @@ function formatDateDMY(value) {
   return m[3] + "/" + m[2] + "/" + m[1];
 }
 
+// Parses a threshold cell's raw text input into a number, the string "NR"
+// (no response -- patient didn't respond at the audiometer's max output), or
+// null (not tested). Anything that isn't yet a complete number/NR is passed
+// through unchanged so the user can keep typing (e.g. a lone "-").
+function parseThresholdInput(raw) {
+  const t = String(raw).trim();
+  if (t === "") return null;
+  if (t.toUpperCase() === "NR") return "NR";
+  if (/^-?\d+$/.test(t)) return Number(t);
+  return raw;
+}
+
+// Thresholds are stored keyed BY FREQUENCY (e.g. {500: 20, 1000: 25, "NR": ...})
+// rather than by array position. This is deliberate: it lets us add new test
+// frequencies (3kHz, 6kHz) later without ever shifting the meaning of an
+// already-saved value at another frequency.
+function hasAnyThreshold(obj) {
+  return !!obj && Object.values(obj).some((v) => v !== null && v !== undefined && v !== "");
+}
+
+const EMPTY_THRESHOLDS = {};
+
 function calcPTA(thresholds) {
-  // Standard 4-frequency Pure Tone Average: 500Hz, 1kHz, 2kHz, 4kHz -- indices 1-4 in AUDIOGRAM_FREQS.
+  // Standard 4-frequency Pure Tone Average: 500Hz, 1kHz, 2kHz, 4kHz.
+  // If any of those points is "NR" (no response) or untested, no PTA can be honestly computed.
   if (!thresholds) return null;
-  const vals = [thresholds[1], thresholds[2], thresholds[3], thresholds[4]];
+  const vals = [thresholds[500], thresholds[1000], thresholds[2000], thresholds[4000]];
   if (vals.some((v) => v === undefined || v === null || v === "" || isNaN(v))) return null;
   const avg = (Number(vals[0]) + Number(vals[1]) + Number(vals[2]) + Number(vals[3])) / 4;
   return Math.round(avg);
@@ -601,6 +624,32 @@ function calcAge(dobIso) {
 }
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+// Downscales + JPEG-compresses a photo client-side before it goes to the
+// audiogram-reading endpoint -- keeps the request small and the API cost down
+// without losing anything the model would need to read a chart.
+function readImageAsCompressedBase64(file, maxDim = 1400) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that file."));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error("Couldn't read that image."));
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        resolve({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg" });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function DatePickerField({ value, onChange, placeholder = "Select date", minYear, maxYear }) {
   const [open, setOpen] = useState(false);
@@ -695,11 +744,63 @@ function DatePickerField({ value, onChange, placeholder = "Select date", minYear
    Supports an optional `compare` dataset, rendered lighter
    and dashed, for before/after comparisons.
 --------------------------------------------------------- */
+// Renders one clinical audiogram symbol at (x, y). `type` selects the standard
+// ASHA symbol shape for the channel (AC unmasked = circle/X, AC masked =
+// triangle/square, BC unmasked = "<"/">", BC masked = "["/"]"). When `nr` is
+// true (no response) a short diagonal arrow is drawn away from the symbol,
+// the standard notation for "no response at this level or beyond".
+function AudiogramSymbol({ type, ear, x, y, color, nr = false }) {
+  const s = 4.3;
+  const dx = ear === "right" ? 1 : -1;
+  let shape;
+  if (type === "ac-unmasked") {
+    shape = ear === "right"
+      ? <circle cx={x} cy={y} r={s} fill="none" stroke={color} strokeWidth="2" />
+      : (
+        <g stroke={color} strokeWidth="2">
+          <line x1={x - s} y1={y - s} x2={x + s} y2={y + s} />
+          <line x1={x - s} y1={y + s} x2={x + s} y2={y - s} />
+        </g>
+      );
+  } else if (type === "ac-masked") {
+    shape = ear === "right"
+      ? <polygon points={(x) + "," + (y - s * 1.2) + " " + (x - s * 1.1) + "," + (y + s * 0.85) + " " + (x + s * 1.1) + "," + (y + s * 0.85)} fill="none" stroke={color} strokeWidth="2" />
+      : <rect x={x - s * 0.9} y={y - s * 0.9} width={s * 1.8} height={s * 1.8} fill="none" stroke={color} strokeWidth="2" />;
+  } else if (type === "bc-unmasked") {
+    shape = ear === "right"
+      ? <path d={"M " + (x + s * 0.85) + " " + (y - s) + " L " + (x - s * 0.65) + " " + y + " L " + (x + s * 0.85) + " " + (y + s)} fill="none" stroke={color} strokeWidth="2" />
+      : <path d={"M " + (x - s * 0.85) + " " + (y - s) + " L " + (x + s * 0.65) + " " + y + " L " + (x - s * 0.85) + " " + (y + s)} fill="none" stroke={color} strokeWidth="2" />;
+  } else if (type === "bc-masked") {
+    shape = ear === "right"
+      ? <path d={"M " + (x + s * 0.75) + " " + (y - s) + " L " + (x - s * 0.75) + " " + (y - s) + " L " + (x - s * 0.75) + " " + (y + s) + " L " + (x + s * 0.75) + " " + (y + s)} fill="none" stroke={color} strokeWidth="2" />
+      : <path d={"M " + (x - s * 0.75) + " " + (y - s) + " L " + (x + s * 0.75) + " " + (y - s) + " L " + (x + s * 0.75) + " " + (y + s) + " L " + (x - s * 0.75) + " " + (y + s)} fill="none" stroke={color} strokeWidth="2" />;
+  }
+  return (
+    <g>
+      {shape}
+      {nr && <line x1={x + s * 0.7 * dx} y1={y + s * 0.7} x2={x + s * 2 * dx} y2={y + s * 2} stroke={color} strokeWidth="1.5" strokeLinecap="round" />}
+    </g>
+  );
+}
+
+const AUDIOGRAM_CHANNELS = [
+  { key: "right", type: "ac-unmasked", ear: "right" },
+  { key: "left", type: "ac-unmasked", ear: "left" },
+  { key: "rightACMasked", type: "ac-masked", ear: "right" },
+  { key: "leftACMasked", type: "ac-masked", ear: "left" },
+  { key: "rightBC", type: "bc-unmasked", ear: "right" },
+  { key: "leftBC", type: "bc-unmasked", ear: "left" },
+  { key: "rightBCMasked", type: "bc-masked", ear: "right" },
+  { key: "leftBCMasked", type: "bc-masked", ear: "left" },
+];
+
 function Audiogram({ freqs, primary, compare, animate = true }) {
-  const w = 320, h = 220, padL = 34, padR = 14, padT = 16, padB = 28;
+  const w = 320, h = 236, padL = 34, padR = 14, padT = 16, padB = 28;
   const plotW = w - padL - padR, plotH = h - padT - padB;
   const xFor = (i) => padL + (i / (freqs.length - 1)) * plotW;
-  const yFor = (db) => padT + (db / 80) * plotH;
+  // Intensity scale now runs 0-120 dB HL (a standard audiometer's full output
+  // range), not just 0-80, so profound losses and "no response" points fit on chart.
+  const yFor = (db) => padT + (db / 120) * plotH;
 
   const [progress, setProgress] = useState(animate ? 0 : 1);
   useEffect(() => {
@@ -716,14 +817,55 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
     return () => cancelAnimationFrame(raf);
   }, [animate, primary]);
 
-  const pathFor = (arr) =>
-    arr.map((db, i) => (i === 0 ? "M" : "L") + " " + xFor(i) + " " + yFor(db)).join(" ");
+  const isTested = (v) => v !== null && v !== undefined && v !== "";
+  const dbFor = (v) => (v === "NR" || v === "nr" ? 120 : Number(v));
+
+  // Threshold objects are keyed by frequency (e.g. obj[500]), not array
+  // position, so extending the tested frequency list never shifts other
+  // values. Splits into runs of consecutive tested points so the connecting
+  // line breaks across untested frequencies instead of assuming 0.
+  const segmentsFor = (obj) => {
+    if (!obj) return [];
+    const segs = [];
+    let cur = [];
+    freqs.forEach((f, i) => {
+      const v = obj[f];
+      if (!isTested(v) || isNaN(dbFor(v))) { if (cur.length > 1) segs.push(cur); cur = []; return; }
+      cur.push([i, dbFor(v)]);
+    });
+    if (cur.length > 1) segs.push(cur);
+    return segs;
+  };
 
   const dashLen = 900;
 
+  const lineSeries = (obj, color, opts = {}) => {
+    const { dashed = false, animated = false } = opts;
+    return segmentsFor(obj).map((seg, si) => (
+      <path key={si} d={seg.map(([i, db], k) => (k === 0 ? "M" : "L") + " " + xFor(i) + " " + yFor(db)).join(" ")}
+        fill="none" stroke={color} strokeWidth={dashed ? 1.5 : 2}
+        strokeDasharray={dashed ? "4 3" : (animated ? dashLen : undefined)}
+        strokeDashoffset={animated ? dashLen * (1 - progress) : undefined}
+        opacity={dashed ? 0.45 : 1} />
+    ));
+  };
+
+  const symbolsFor = (data, chan) => {
+    const obj = data && data[chan.key];
+    if (!obj) return null;
+    return freqs.map((f, i) => {
+      const v = obj[f];
+      if (!isTested(v) || isNaN(dbFor(v))) return null;
+      const x = xFor(i), y = yFor(dbFor(v));
+      return progress > 0.8 ? (
+        <AudiogramSymbol key={chan.key + "-" + i} type={chan.type} ear={chan.ear} x={x} y={y} color={chan.ear === "right" ? "#C4573F" : "#1E3A6D"} nr={v === "NR" || v === "nr"} />
+      ) : null;
+    });
+  };
+
   return (
     <svg width="100%" viewBox={"0 0 " + w + " " + h} style={{ display: "block" }}>
-      {[0, 20, 40, 60, 80].map((db) => (
+      {[0, 20, 40, 60, 80, 100, 120].map((db) => (
         <g key={db}>
           <line x1={padL} x2={w - padR} y1={yFor(db)} y2={yFor(db)} stroke="#E3E7EE" strokeWidth="1" />
           <text x={padL - 8} y={yFor(db) + 3} fontSize="9" fill="#8A96A3" textAnchor="end" fontFamily="IBM Plex Mono, monospace">{db}</text>
@@ -736,31 +878,19 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
       ))}
       <rect x={padL} y={yFor(0)} width={plotW} height={yFor(25) - yFor(0)} fill="#6E8F6A" opacity="0.06" />
       <rect x={padL} y={yFor(25)} width={plotW} height={yFor(55) - yFor(25)} fill="#E8631E" opacity="0.07" />
-      <rect x={padL} y={yFor(55)} width={plotW} height={yFor(80) - yFor(55)} fill="#C4573F" opacity="0.07" />
+      <rect x={padL} y={yFor(55)} width={plotW} height={yFor(120) - yFor(55)} fill="#C4573F" opacity="0.07" />
 
       {compare && (
         <>
-          <path d={pathFor(compare.right)} fill="none" stroke="#C4573F" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.45" />
-          <path d={pathFor(compare.left)} fill="none" stroke="#1E3A6D" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.45" />
+          {lineSeries(compare.right, "#C4573F", { dashed: true })}
+          {lineSeries(compare.left, "#1E3A6D", { dashed: true })}
         </>
       )}
 
-      <path d={pathFor(primary.right)} fill="none" stroke="#C4573F" strokeWidth="2"
-        strokeDasharray={dashLen} strokeDashoffset={dashLen * (1 - progress)} />
-      {primary.right.map((db, i) => (
-        <circle key={i} cx={xFor(i)} cy={yFor(db)} r={progress > 0.8 ? 4.5 : 0} fill="none" stroke="#C4573F" strokeWidth="2" style={{ transition: "r 0.2s" }} />
-      ))}
-      <path d={pathFor(primary.left)} fill="none" stroke="#1E3A6D" strokeWidth="2"
-        strokeDasharray={dashLen} strokeDashoffset={dashLen * (1 - progress)} />
-      {primary.left.map((db, i) => {
-        const x = xFor(i), y = yFor(db), s = 4;
-        return progress > 0.8 ? (
-          <g key={i} stroke="#1E3A6D" strokeWidth="2">
-            <line x1={x - s} y1={y - s} x2={x + s} y2={y + s} />
-            <line x1={x - s} y1={y + s} x2={x + s} y2={y - s} />
-          </g>
-        ) : null;
-      })}
+      {lineSeries(primary.right, "#C4573F", { animated: true })}
+      {lineSeries(primary.left, "#1E3A6D", { animated: true })}
+
+      {AUDIOGRAM_CHANNELS.map((chan) => symbolsFor(primary, chan))}
     </svg>
   );
 }
@@ -836,7 +966,9 @@ function QuestionnaireResultCard({ result }) {
   );
 }
 
-function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = false }) {
+// `completedAtOverride` lets staff backfill a past paper record with the real
+// completion date instead of today -- see BackfillQuestionnaireModal below.
+function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = false, completedAtOverride }) {
   const questions = q.questions;
   const [mode, setMode] = useState(existingResult ? "view" : "quiz");
   const [idx, setIdx] = useState(0);
@@ -855,7 +987,7 @@ function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = fa
 
   const finish = (next) => {
     const computed = q.computeResult(next, questions);
-    setResult({ ...computed, completedAt: new Date().toISOString().slice(0, 10), answers: next });
+    setResult({ ...computed, completedAt: completedAtOverride || new Date().toISOString().slice(0, 10), answers: next });
     setMode("result");
   };
 
@@ -1122,6 +1254,54 @@ function HomeTab({ setTab, profile, appointments, onEditProfile }) {
 /* ---------------------------------------------------------
    TABS: RESULTS (with audiogram history + comparison)
 --------------------------------------------------------- */
+// Reusable Right/Left threshold entry grid used for each audiogram channel
+// (AC unmasked, AC masked, BC unmasked, BC masked) in Staff Admin. Accepts
+// free text so staff can type "NR" for no response, not just numbers.
+// Threshold cells are keyed by frequency (e.g. rightObj[500]), not array
+// position -- see the comment on hasAnyThreshold above for why.
+function ThresholdGrid({ label, rightObj, leftObj, onChangeRight, onChangeLeft, flaggedRight, flaggedLeft, onClearFlagRight, onClearFlagLeft, onCopyRightToLeft, onCopyLeftToRight }) {
+  const r = rightObj || EMPTY_THRESHOLDS, l = leftObj || EMPTY_THRESHOLDS;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3" }}>{label}</div>
+        {(onCopyRightToLeft || onCopyLeftToRight) && (
+          <div style={{ display: "flex", gap: 12 }}>
+            {onCopyRightToLeft && <span onClick={onCopyRightToLeft} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy right &rarr; left</span>}
+            {onCopyLeftToRight && <span onClick={onCopyLeftToRight} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy left &rarr; right</span>}
+          </div>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 4 }}>
+        <span style={{ fontSize: 10.5, color: "#8A96A3", fontFamily: "'IBM Plex Mono', monospace" }}>Freq</span>
+        <span style={{ fontSize: 10.5, color: "#C4573F", fontFamily: "'IBM Plex Mono', monospace" }}>Right</span>
+        <span style={{ fontSize: 10.5, color: "#1E3A6D", fontFamily: "'IBM Plex Mono', monospace" }}>Left</span>
+      </div>
+      {AUDIOGRAM_FREQS.map((f) => {
+        const rightFlagged = flaggedRight && flaggedRight.has(f);
+        const leftFlagged = flaggedLeft && flaggedLeft.has(f);
+        return (
+          <div key={f} style={{ display: "grid", gridTemplateColumns: "50px 1fr 1fr", gap: 6, marginBottom: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", color: "#1B2430" }}>{f >= 1000 ? (f / 1000) + "k" : f}</span>
+            <input
+              type="text" placeholder="dB or NR"
+              style={{ ...inputStyle, ...(rightFlagged ? { borderColor: "#E0A72E", background: "#FBF3DD" } : {}) }}
+              value={r[f] === null || r[f] === undefined ? "" : r[f]}
+              onChange={(e) => { onChangeRight(f, parseThresholdInput(e.target.value)); if (rightFlagged && onClearFlagRight) onClearFlagRight(f); }}
+            />
+            <input
+              type="text" placeholder="dB or NR"
+              style={{ ...inputStyle, ...(leftFlagged ? { borderColor: "#E0A72E", background: "#FBF3DD" } : {}) }}
+              value={l[f] === null || l[f] === undefined ? "" : l[f]}
+              onChange={(e) => { onChangeLeft(f, parseThresholdInput(e.target.value)); if (leftFlagged && onClearFlagLeft) onClearFlagLeft(f); }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
   const [sub, setSub] = useState("audiogram");
   const [selectedIdx, setSelectedIdx] = useState(0);
@@ -1131,6 +1311,16 @@ function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
 
   const primary = audiogramHistory[selectedIdx] || audiogramHistory[0];
   const compare = compareIdx !== "" ? audiogramHistory[Number(compareIdx)] : null;
+
+  const chanUsed = (key) => hasAnyThreshold(primary[key]) || (compare && hasAnyThreshold(compare[key]));
+  const showACMasked = chanUsed("rightACMasked") || chanUsed("leftACMasked");
+  const showBC = chanUsed("rightBC") || chanUsed("leftBC");
+  const showBCMasked = chanUsed("rightBCMasked") || chanUsed("leftBCMasked");
+  const hasNR = [primary, compare].filter(Boolean).some((a) =>
+    ["right", "left", "rightACMasked", "leftACMasked", "rightBC", "leftBC", "rightBCMasked", "leftBCMasked"].some(
+      (k) => a[k] && Object.values(a[k]).some((v) => v === "NR" || v === "nr")
+    )
+  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -1243,11 +1433,34 @@ function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
             <Audiogram freqs={AUDIOGRAM_FREQS} primary={primary} compare={compare} />
             <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid #C4573F" }} /> Right ear
+                <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid #C4573F" }} /> Right ear (AC)
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&times;</span> Left ear
+                <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&times;</span> Left ear (AC)
               </div>
+              {showACMasked && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#C4573F", fontWeight: 700 }}>&#9651;</span>
+                  <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&#9633;</span> AC masked
+                </div>
+              )}
+              {showBC && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#C4573F", fontWeight: 700 }}>&lt;</span>
+                  <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&gt;</span> BC unmasked
+                </div>
+              )}
+              {showBCMasked && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#C4573F", fontWeight: 700 }}>[</span>
+                  <span style={{ color: "#1E3A6D", fontWeight: 700 }}>]</span> BC masked
+                </div>
+              )}
+              {hasNR && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontWeight: 700 }}>&#8600;</span> NR = no response
+                </div>
+              )}
               {compare && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 14, height: 0, borderTop: "1.5px dashed #8A96A3" }} /> {formatDateDMY(compare.date)} (dashed)
@@ -2697,7 +2910,7 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
           {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => {}} />}
-          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: [0, 0, 0, 0, 0, 0], left: [0, 0, 0, 0, 0, 0] }]} sin={sin} patientId={patientId} readOnly />}
+          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} readOnly />}
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={blockCheckout} />}
@@ -3228,6 +3441,71 @@ function QuestionnaireHistorySection({ patientName, questionnaires }) {
   );
 }
 
+// Lets a super admin enter a questionnaire result on the patient's behalf --
+// e.g. a paper form filled out at a past visit that needs to go into the
+// digital record with its real (past) completion date, not today's date.
+function BackfillQuestionnaireModal({ patientId, onClose, onSaved }) {
+  const options = QUESTIONNAIRES.filter((q) => !q.comingSoon);
+  const [qId, setQId] = useState(options[0]?.id || "");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [started, setStarted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const q = options.find((x) => x.id === qId);
+
+  const handleSave = async (result) => {
+    setSaving(true);
+    setError("");
+    try {
+      await db.saveQuestionnaireResponse(patientId, qId, result);
+      onSaved();
+    } catch (e) {
+      setError(e.message || "Couldn't save that result.");
+      setSaving(false);
+    }
+  };
+
+  if (started && q) {
+    return (
+      <QuestionnaireRunner
+        q={q}
+        existingResult={null}
+        completedAtOverride={date}
+        onClose={onClose}
+        onSave={handleSave}
+      />
+    );
+  }
+
+  return (
+    <ModalShell>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+        <SectionLabel>Add past questionnaire result</SectionLabel>
+        <span onClick={onClose} style={{ color: "#64707E", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>&times;</span>
+      </div>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginBottom: 16, lineHeight: 1.5 }}>
+        For backfilling a result the patient completed on paper or before this system existed. You'll answer the same questions the patient would, then it saves under the date you choose here.
+      </div>
+      <FieldRow label="Questionnaire">
+        <select style={inputStyle} value={qId} onChange={(e) => setQId(e.target.value)}>
+          {options.map((o) => <option key={o.id} value={o.id}>{o.name + " (" + o.short + ")"}</option>)}
+        </select>
+      </FieldRow>
+      <FieldRow label="Date completed">
+        <DatePickerField value={date} onChange={setDate} />
+      </FieldRow>
+      {error && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#C4573F", marginBottom: 10 }}>{error}</div>}
+      <button onClick={() => setStarted(true)} disabled={!qId || !date || saving} style={{
+        width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
+        border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14,
+        cursor: !qId || !date || saving ? "default" : "pointer", opacity: !qId || !date || saving ? 0.6 : 1,
+      }}>
+        Start
+      </button>
+    </ModalShell>
+  );
+}
+
 function RefundModal({ invoice, patientId, patientName, documents, onClose, onRefunded }) {
   const items = (invoice.orderJson && invoice.orderJson.items) || [];
   const remaining = Math.max(0, invoice.amountTotal - invoice.refundedAmount);
@@ -3628,6 +3906,8 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+  const [backfillOpen, setBackfillOpen] = useState(false);
+  const [expandedAudiogram, setExpandedAudiogram] = useState({}); // { [rowIndex]: bool } -- shows AC-masked/BC fields
   const patientName = ((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient";
 
   useEffect(() => { setDraft(data); }, [section]);
@@ -3644,6 +3924,13 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
       const fresh = await db.fetchPatientBundle(patientId);
       setDraft((p) => ({ ...p, documents: fresh.documents, invoices: fresh.invoices, creditNotes: fresh.creditNotes }));
     } catch (e) { console.error("failed to refresh billing", e); }
+  };
+
+  const refreshQuestionnaires = async () => {
+    try {
+      const fresh = await db.fetchPatientBundle(patientId);
+      setDraft((p) => ({ ...p, questionnaires: fresh.questionnaires }));
+    } catch (e) { console.error("failed to refresh questionnaires", e); }
   };
 
   const commit = () => {
@@ -3775,10 +4062,16 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
 
           {section === "audiogramHistory" && (
             <>
-              {draft.audiogramHistory.map((a, i) => (
+              {draft.audiogramHistory.map((a, i) => {
+                const isAudioExpanded = expandedAudiogram[i] ?? (
+                  hasAnyThreshold(a.rightACMasked) || hasAnyThreshold(a.leftACMasked) ||
+                  hasAnyThreshold(a.rightBC) || hasAnyThreshold(a.leftBC) ||
+                  hasAnyThreshold(a.rightBCMasked) || hasAnyThreshold(a.leftBCMasked)
+                );
+                return (
                 <div key={a.id || i} style={{ border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                    <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: "#1E3A6D" }}>{"Test " + (i + 1)}</span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: "#1E3A6D" }}>{"Test " + (i + 1) + (a.date ? " -- " + formatDateDMY(a.date) : "")}</span>
                     {canDelete && (
                       <Trash2 size={15} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => {
                         const next = draft.audiogramHistory.filter((_, idx) => idx !== i);
@@ -3786,47 +4079,96 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
                       }} />
                     )}
                   </div>
+
                   <FieldRow label="Test date">
                     <DatePickerField value={a.date} onChange={(v) => {
                       const next = [...draft.audiogramHistory]; next[i] = { ...next[i], date: v };
                       setDraft((p) => ({ ...p, audiogramHistory: next }));
                     }} />
                   </FieldRow>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, marginTop: 8 }}>
-                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, color: "#8A96A3" }}>THRESHOLDS (dB HL)</div>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <span onClick={() => {
-                        const next = [...draft.audiogramHistory]; next[i] = { ...next[i], left: [...next[i].right] };
-                        setDraft((p) => ({ ...p, audiogramHistory: next }));
-                      }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy right &rarr; left</span>
-                      <span onClick={() => {
-                        const next = [...draft.audiogramHistory]; next[i] = { ...next[i], right: [...next[i].left] };
-                        setDraft((p) => ({ ...p, audiogramHistory: next }));
-                      }} style={{ fontSize: 11, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer" }}>Copy left &rarr; right</span>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "50px 1fr 1fr", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                    <span style={{ fontSize: 10.5, color: "#8A96A3", fontFamily: "'IBM Plex Mono', monospace" }}>Freq</span>
-                    <span style={{ fontSize: 10.5, color: "#C4573F", fontFamily: "'IBM Plex Mono', monospace" }}>Right</span>
-                    <span style={{ fontSize: 10.5, color: "#1E3A6D", fontFamily: "'IBM Plex Mono', monospace" }}>Left</span>
-                  </div>
-                  {AUDIOGRAM_FREQS.map((f, fi) => (
-                    <div key={f} style={{ display: "grid", gridTemplateColumns: "50px 1fr 1fr", gap: 6, marginBottom: 6, alignItems: "center" }}>
-                      <span style={{ fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", color: "#1B2430" }}>{f >= 1000 ? (f / 1000) + "k" : f}</span>
-                      <input type="number" style={inputStyle} value={a.right[fi]} onChange={(e) => {
-                        const next = [...draft.audiogramHistory]; const right = [...next[i].right]; right[fi] = Number(e.target.value);
-                        next[i] = { ...next[i], right }; setDraft((p) => ({ ...p, audiogramHistory: next }));
-                      }} />
-                      <input type="number" style={inputStyle} value={a.left[fi]} onChange={(e) => {
-                        const next = [...draft.audiogramHistory]; const left = [...next[i].left]; left[fi] = Number(e.target.value);
-                        next[i] = { ...next[i], left }; setDraft((p) => ({ ...p, audiogramHistory: next }));
-                      }} />
-                    </div>
-                  ))}
+
+                  <div style={{ fontSize: 10.5, color: "#8A96A3", fontFamily: "'Inter', sans-serif", marginTop: 6 }}>Enter a threshold in dB HL, or type NR for no response.</div>
+
+                  <ThresholdGrid
+                    label="AIR CONDUCTION - UNMASKED (dB HL)"
+                    rightObj={a.right} leftObj={a.left}
+                    onChangeRight={(f, v) => {
+                      const next = [...draft.audiogramHistory]; const right = { ...(next[i].right || {}), [f]: v };
+                      next[i] = { ...next[i], right }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                    }}
+                    onChangeLeft={(f, v) => {
+                      const next = [...draft.audiogramHistory]; const left = { ...(next[i].left || {}), [f]: v };
+                      next[i] = { ...next[i], left }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                    }}
+                    onCopyRightToLeft={() => {
+                      const next = [...draft.audiogramHistory]; next[i] = { ...next[i], left: { ...next[i].right } };
+                      setDraft((p) => ({ ...p, audiogramHistory: next }));
+                    }}
+                    onCopyLeftToRight={() => {
+                      const next = [...draft.audiogramHistory]; next[i] = { ...next[i], right: { ...next[i].left } };
+                      setDraft((p) => ({ ...p, audiogramHistory: next }));
+                    }}
+                  />
+
+                  {isAudioExpanded ? (
+                    <>
+                      <ThresholdGrid
+                        label="AIR CONDUCTION - MASKED (dB HL)"
+                        rightObj={a.rightACMasked} leftObj={a.leftACMasked}
+                        onChangeRight={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].rightACMasked || {}), [f]: v };
+                          next[i] = { ...next[i], rightACMasked: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                        onChangeLeft={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].leftACMasked || {}), [f]: v };
+                          next[i] = { ...next[i], leftACMasked: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                      />
+                      <ThresholdGrid
+                        label="BONE CONDUCTION - UNMASKED (dB HL)"
+                        rightObj={a.rightBC} leftObj={a.leftBC}
+                        onChangeRight={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].rightBC || {}), [f]: v };
+                          next[i] = { ...next[i], rightBC: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                        onChangeLeft={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].leftBC || {}), [f]: v };
+                          next[i] = { ...next[i], leftBC: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                      />
+                      <ThresholdGrid
+                        label="BONE CONDUCTION - MASKED (dB HL)"
+                        rightObj={a.rightBCMasked} leftObj={a.leftBCMasked}
+                        onChangeRight={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].rightBCMasked || {}), [f]: v };
+                          next[i] = { ...next[i], rightBCMasked: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                        onChangeLeft={(f, v) => {
+                          const next = [...draft.audiogramHistory]; const obj = { ...(next[i].leftBCMasked || {}), [f]: v };
+                          next[i] = { ...next[i], leftBCMasked: obj }; setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }}
+                      />
+                      <div onClick={() => setExpandedAudiogram((p) => ({ ...p, [i]: false }))} style={{ fontSize: 11, color: "#8A96A3", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer", marginTop: 6 }}>
+                        Hide masked / bone conduction fields
+                      </div>
+                    </>
+                  ) : (
+                    <div onClick={() => setExpandedAudiogram((p) => ({ ...p, [i]: true }))} style={{
+                      marginTop: 10, textAlign: "center", padding: "8px 0", borderRadius: 8, border: "1px dashed #C7CDD8",
+                      fontSize: 11.5, color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, cursor: "pointer",
+                    }}>+ Add masked / bone conduction thresholds</div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
               <button onClick={() => setDraft((p) => ({
-                ...p, audiogramHistory: [{ id: Date.now(), date: "", right: [0, 0, 0, 0, 0, 0], left: [0, 0, 0, 0, 0, 0] }, ...p.audiogramHistory],
+                // Appended to the end (not prepended) so existing tests keep their
+                // position/number -- and every field starts blank (not 0, which is
+                // itself a real threshold value) so it's obvious nothing's been entered yet.
+                ...p, audiogramHistory: [...p.audiogramHistory, {
+                  id: Date.now(), date: "", right: {}, left: {},
+                  rightACMasked: {}, leftACMasked: {}, rightBC: {}, leftBC: {}, rightBCMasked: {}, leftBCMasked: {},
+                }],
               }))} style={{
                 width: "100%", padding: "10px 0", borderRadius: 10, border: "1px dashed #C7CDD8", background: "transparent",
                 fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, color: "#1E3A6D", cursor: "pointer",
@@ -4057,10 +4399,28 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
           )}
 
           {section === "questionnaires" && (
-            <QuestionnaireHistorySection
-              patientName={patientName}
-              questionnaires={draft.questionnaires || []}
-            />
+            <>
+              {canDelete && (
+                <button onClick={() => setBackfillOpen(true)} style={{
+                  width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
+                  fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  <ClipboardList size={15} /> Add past questionnaire result
+                </button>
+              )}
+              <QuestionnaireHistorySection
+                patientName={patientName}
+                questionnaires={draft.questionnaires || []}
+              />
+              {backfillOpen && (
+                <BackfillQuestionnaireModal
+                  patientId={patientId}
+                  onClose={() => setBackfillOpen(false)}
+                  onSaved={async () => { setBackfillOpen(false); await refreshQuestionnaires(); }}
+                />
+              )}
+            </>
           )}
 
           {section === "invoices" && (
@@ -5327,7 +5687,7 @@ export default function AmazingHearingApp() {
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
           {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => setEditProfileOpen(true)} />}
-          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: [0, 0, 0, 0, 0, 0], left: [0, 0, 0, 0, 0, 0] }]} sin={sin} patientId={patientId} />}
+          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} />}
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={() => setCheckoutOpen(true)} />}
