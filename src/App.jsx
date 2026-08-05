@@ -602,7 +602,7 @@ function calcAge(dobIso) {
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-function DatePickerField({ value, onChange, placeholder = "Select date" }) {
+function DatePickerField({ value, onChange, placeholder = "Select date", minYear, maxYear }) {
   const [open, setOpen] = useState(false);
   const parsed = (() => {
     const m = value && String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -614,7 +614,12 @@ function DatePickerField({ value, onChange, placeholder = "Select date" }) {
 
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDow = new Date(viewYear, viewMonth, 1).getDay();
-  const years = Array.from({ length: 110 }, (_, i) => today.getFullYear() - i);
+  // Default range only looks backward from today (fine for birthdates, test dates,
+  // etc.). Pass minYear/maxYear explicitly for fields like warranties that need
+  // future years too.
+  const years = (minYear != null && maxYear != null)
+    ? Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i)
+    : Array.from({ length: 110 }, (_, i) => today.getFullYear() - i);
 
   const pick = (d) => {
     const iso = viewYear + "-" + String(viewMonth + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
@@ -3898,9 +3903,13 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
               </FieldRow>
               {[["warranty", "Product Warranty"], ["serviceWarranty", "Service Warranty"], ["lossDamageCover", "Loss & Damage Cover"], ["lastService", "Last serviced"]].map(([k, label]) => (
                 <FieldRow key={k} label={label}>
-                  <DatePickerField value={d[k]} onChange={(v) => {
-                    const next = [...draft.devices]; next[i] = { ...next[i], [k]: v }; setDraft((p) => ({ ...p, devices: next }));
-                  }} />
+                  <DatePickerField
+                    value={d[k]}
+                    onChange={(v) => {
+                      const next = [...draft.devices]; next[i] = { ...next[i], [k]: v }; setDraft((p) => ({ ...p, devices: next }));
+                    }}
+                    {...(k === "lastService" ? {} : { minYear: 2022, maxYear: 2032 })}
+                  />
                 </FieldRow>
               ))}
             </div>
