@@ -12,6 +12,31 @@
     <meta name="theme-color" content="#1E3A6D" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <style>
+      /*
+        The "phone mockup" frame (rounded corners, thick border, fixed height)
+        looks nice as a desktop preview, but on an actual phone it just wastes
+        the screen and can push content below the browser's own address/tab bar.
+        On narrow (real phone) viewports, strip the decoration and let the app
+        fill the true visible viewport edge-to-edge instead.
+      */
+      @media (max-width: 480px) {
+        .ah-phone-page {
+          padding: 0 !important;
+          align-items: stretch !important;
+          background: #F4F5F8 !important;
+        }
+        .ah-phone-shell {
+          width: 100% !important;
+          max-width: 100% !important;
+          height: 100dvh !important;
+          min-height: 100dvh !important;
+          border-radius: 0 !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+      }
+    </style>
   </head>
   <body style="margin:0">
     <div id="root"></div>
