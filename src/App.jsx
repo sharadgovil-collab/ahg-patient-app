@@ -2526,7 +2526,7 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
       <Card style={{ background: "#1E3A6D", border: "none" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Fraunces', serif", fontWeight: 600, color: "#1E3A6D" }}>
-            SG
+            {clinicianInitials(profile.audiologist)}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "#fff", fontWeight: 500 }}>{profile.audiologist}</div>
@@ -2942,6 +2942,9 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
         <div style={{
           padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: "#1E3A6D", flexShrink: 0,
+          // Clears the device's own status bar/notch on real mobile screens, now that
+          // this preview frame runs edge-to-edge there instead of inside a bordered box.
+          paddingTop: "calc(10px + env(safe-area-inset-top))",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: "'Inter', sans-serif", fontSize: 11.5, fontWeight: 700, color: "#fff" }}>
             <Eye size={13} /> {"Previewing " + patientName}
@@ -2959,7 +2962,7 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
           padding: "12px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between",
           borderBottom: "1px solid #E3E7EE", background: "#F4F5F8",
         }}>
-          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 52, width: "auto", objectFit: "contain" }} />
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 68, width: "auto", objectFit: "contain" }} />
           <div style={{ position: "relative", cursor: "pointer" }} onClick={() => cartCount > 0 && blockCheckout()}>
             <ShoppingCart size={18} color="#64707E" />
             {cartCount > 0 && (
@@ -3977,6 +3980,8 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [expandedAudiogram, setExpandedAudiogram] = useState({}); // { [rowIndex]: bool } -- shows AC-masked/BC fields
+  const [regPdfBusy, setRegPdfBusy] = useState(false);
+  const [regPdfError, setRegPdfError] = useState("");
   const patientName = ((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient";
 
   useEffect(() => { setDraft(data); }, [section]);
@@ -3986,6 +3991,32 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
       const fresh = await db.fetchPatientBundle(patientId);
       setDraft((p) => ({ ...p, documents: fresh.documents }));
     } catch (e) { console.error("failed to refresh documents", e); }
+  };
+
+  // Backfills a registration + PDPA consent PDF for a patient who registered
+  // before this feature existed (or was created directly by staff), using
+  // whatever's currently on file in their profile -- so every patient ends up
+  // with the same signed consent record on hand, not just new registrations.
+  const generateRegistrationPdfForExisting = async () => {
+    setRegPdfBusy(true);
+    setRegPdfError("");
+    try {
+      const p = draft.profile;
+      const fullName = [p.salutation, p.firstName, p.lastName].filter(Boolean).join(" ");
+      const { blob, fileName } = await generateRegistrationPDF({
+        email: p.email, fullName, gender: p.gender, dob: p.dob, mobile: p.mobile, nationality: p.nationality,
+        occupation: p.occupation, spokenLanguages: p.spokenLanguages, address: p.address, postalCode: p.postalCode,
+        referralSource: p.referralSource, medicalReferral: p.medicalReferral, referralDoctorName: p.referralDoctorName,
+        significantOtherName: p.significantOtherName, significantOtherRelation: p.significantOtherRelation,
+        significantOtherContact: p.significantOtherContact, significantOtherEmail: p.significantOtherEmail,
+        consentGiven: p.consentGiven, consentSignatureName: p.consentSignatureName,
+      });
+      await db.attachRegistrationDocument({ patientId, blob, fileName });
+      await refreshDocuments();
+    } catch (e) {
+      setRegPdfError(e.message || "Couldn't generate that PDF -- please try again.");
+    }
+    setRegPdfBusy(false);
   };
 
   const refreshBilling = async () => {
@@ -4403,11 +4434,22 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
               </button>
               <button onClick={() => setCreateInvoiceOpen(true)} style={{
                 width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
-                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 16,
+                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: "pointer", marginBottom: 10,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>
                 <Receipt size={15} /> Create invoice
               </button>
+              <button onClick={generateRegistrationPdfForExisting} disabled={regPdfBusy} style={{
+                width: "100%", padding: "12px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
+                fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 13, cursor: regPdfBusy ? "default" : "pointer", marginBottom: 6,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: regPdfBusy ? 0.6 : 1,
+              }}>
+                <FileText size={15} /> {regPdfBusy ? "Generating..." : "Generate registration PDF"}
+              </button>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", marginBottom: 16, lineHeight: 1.5 }}>
+                Builds a PDF of this patient's current registration details and PDPA consent (using whatever's on file) and saves it here -- for patients who registered before this was automatic.
+              </div>
+              {regPdfError && <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#C4573F", marginBottom: 10 }}>{regPdfError}</div>}
               {draft.documents.length === 0 && (
                 <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3", textAlign: "center", padding: "20px 0" }}>No documents uploaded yet.</div>
               )}
@@ -5135,6 +5177,17 @@ const CLINICIANS = [
   "Zu Xuan Lee, Senior Audiologist",
 ];
 
+// Builds a clinician's initials from their name (the part of profile.audiologist
+// before the comma), for the avatar shown in Care. Strips a leading title
+// (Dr./Mr./Ms./Mrs.) and takes the first letter of the next two name words --
+// so "Zu Xuan Lee" reads "ZX" (compound given name) not "ZL".
+function clinicianInitials(audiologistField) {
+  if (!audiologistField) return "";
+  const namePart = String(audiologistField).split(",")[0].trim();
+  const words = namePart.replace(/^(Dr\.?|Mr\.?|Ms\.?|Mrs\.?)\s+/i, "").trim().split(/\s+/).filter(Boolean);
+  return words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+}
+
 // Weekly hours per clinic, indexed Sun(0)..Sat(6). null = closed that day.
 const CLINIC_HOURS = {
   "Bedok": [null, ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"], ["10:00", "18:30"]],
@@ -5228,7 +5281,17 @@ function clinicTimeSlots(clinic, dateIso) {
    (category "Reports") as a permanent record of exactly what they
    consented to and their signature, for compliance/record purposes.
 --------------------------------------------------------- */
-async function generateRegistrationPDF(email, draft) {
+// Accepts pre-computed name strings (fullName / significantOtherName) rather
+// than assembling them internally, since the two callers have different raw
+// shapes: IntakeForm's draft has separate salutation/first/last fields, while
+// a patient's saved profile (used for backfilling existing patients from
+// Staff Admin) stores significant-other name as a single combined field.
+async function generateRegistrationPDF({
+  email, fullName, gender, dob, mobile, nationality, occupation, spokenLanguages, address, postalCode,
+  referralSource, medicalReferral, referralDoctorName,
+  significantOtherName, significantOtherRelation, significantOtherContact, significantOtherEmail,
+  consentGiven, consentSignatureName,
+}) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -5260,11 +5323,10 @@ async function generateRegistrationPDF(email, draft) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(100, 112, 126);
-  doc.text("Registered " + formatDateDMY(today) + "  \u00b7  " + email, marginX, y);
+  doc.text("Generated " + formatDateDMY(today) + "  \u00b7  " + (email || ""), marginX, y);
   y += 26;
 
-  const fullName = [draft.salutation, draft.firstName, draft.lastName].filter(Boolean).join(" ");
-  const sig = [draft.significantOtherSalutation, draft.significantOtherFirstName, draft.significantOtherLastName].filter(Boolean).join(" ");
+  const sig = significantOtherName || "";
 
   const section = (title) => {
     if (y > pageHeight - 90) { doc.addPage(); y = 48; }
@@ -5297,27 +5359,27 @@ async function generateRegistrationPDF(email, draft) {
 
   section("Patient Details");
   rows([
-    ["Full name", fullName], ["Gender", draft.gender], ["Date of birth", draft.dob ? formatDateDMY(draft.dob) : ""],
-    ["Mobile", draft.mobile], ["Email", email], ["Nationality", draft.nationality],
-    ["Occupation", draft.occupation], ["Spoken languages", draft.spokenLanguages],
-    ["Address", draft.address], ["Postal code", draft.postalCode],
+    ["Full name", fullName], ["Gender", gender], ["Date of birth", dob ? formatDateDMY(dob) : ""],
+    ["Mobile", mobile], ["Email", email], ["Nationality", nationality],
+    ["Occupation", occupation], ["Spoken languages", spokenLanguages],
+    ["Address", address], ["Postal code", postalCode],
   ]);
   y += 8;
 
-  if (draft.referralSource || (draft.medicalReferral && draft.referralDoctorName)) {
+  if (referralSource || (medicalReferral && referralDoctorName)) {
     section("Referral");
     rows([
-      ["How they heard of us", draft.referralSource],
-      ["Referring doctor (GP/ENT)", draft.medicalReferral ? draft.referralDoctorName : ""],
+      ["How they heard of us", referralSource],
+      ["Referring doctor (GP/ENT)", medicalReferral ? referralDoctorName : ""],
     ]);
     y += 8;
   }
 
-  if (sig || draft.significantOtherContact) {
+  if (sig || significantOtherContact) {
     section("Significant Other");
     rows([
-      ["Name", sig], ["Relation", draft.significantOtherRelation],
-      ["Contact", draft.significantOtherContact], ["Email", draft.significantOtherEmail],
+      ["Name", sig], ["Relation", significantOtherRelation],
+      ["Contact", significantOtherContact], ["Email", significantOtherEmail],
     ]);
     y += 8;
   }
@@ -5346,7 +5408,7 @@ async function generateRegistrationPDF(email, draft) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(27, 36, 48);
-  doc.text((draft.consentGiven ? "[X]" : "[ ]") + "  I have read and agree to the consent statement above.", marginX, y);
+  doc.text((consentGiven ? "[X]" : "[ ]") + "  I have read and agree to the consent statement above.", marginX, y);
   y += 34;
 
   doc.setDrawColor(200, 205, 214);
@@ -5362,10 +5424,10 @@ async function generateRegistrationPDF(email, draft) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(27, 36, 48);
-  doc.text(draft.consentSignatureName || "", marginX, y);
+  doc.text(consentSignatureName || "", marginX, y);
   doc.text(formatDateDMY(today), marginX + 280, y);
 
-  const safeName = fullName.replace(/[^a-z0-9]+/gi, "_") || "patient";
+  const safeName = (fullName || "").replace(/[^a-z0-9]+/gi, "_") || "patient";
   const fileName = "Registration_PDPA_" + safeName + "_" + today + ".pdf";
   return { blob: doc.output("blob"), fileName };
 }
@@ -5397,7 +5459,16 @@ function IntakeForm({ email, patientId, onFinish }) {
       // signed, for PDPA compliance. Registration has already succeeded above,
       // so a PDF/upload hiccup here should never block the patient from continuing.
       try {
-        const { blob, fileName } = await generateRegistrationPDF(email, draft);
+        const fullName = [draft.salutation, draft.firstName, draft.lastName].filter(Boolean).join(" ");
+        const soName = [draft.significantOtherSalutation, draft.significantOtherFirstName, draft.significantOtherLastName].filter(Boolean).join(" ");
+        const { blob, fileName } = await generateRegistrationPDF({
+          email, fullName, gender: draft.gender, dob: draft.dob, mobile: draft.mobile, nationality: draft.nationality,
+          occupation: draft.occupation, spokenLanguages: draft.spokenLanguages, address: draft.address, postalCode: draft.postalCode,
+          referralSource: draft.referralSource, medicalReferral: draft.medicalReferral, referralDoctorName: draft.referralDoctorName,
+          significantOtherName: soName, significantOtherRelation: draft.significantOtherRelation,
+          significantOtherContact: draft.significantOtherContact, significantOtherEmail: draft.significantOtherEmail,
+          consentGiven: draft.consentGiven, consentSignatureName: draft.consentSignatureName,
+        });
         await db.attachRegistrationDocument({ patientId, blob, fileName });
       } catch (pdfErr) {
         console.error("couldn't save registration PDF", pdfErr);
@@ -5896,7 +5967,7 @@ export default function AmazingHearingApp() {
           padding: "12px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between",
           borderBottom: "1px solid #E3E7EE", background: "#F4F5F8",
         }}>
-          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 52, width: "auto", objectFit: "contain" }} />
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 68, width: "auto", objectFit: "contain" }} />
           <div style={{ position: "relative", cursor: "pointer" }} onClick={() => cartCount > 0 && setCheckoutOpen(true)}>
             <ShoppingCart size={18} color="#64707E" />
             {cartCount > 0 && (
