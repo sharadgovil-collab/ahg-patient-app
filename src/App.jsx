@@ -9,7 +9,7 @@ import {
   ShoppingBag, Plus, Minus, CreditCard, ShieldCheck, Lock,
   Settings, Trash2, Save, X, FileText, Receipt,
   LogOut, Cpu, Smartphone, ArrowLeftRight, Brain, Pencil, Mail,
-  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer, Download, Eye, LayoutGrid, Stethoscope
+  Camera, Upload, ChevronUp, KeyRound, ChevronLeft, Instagram, Facebook, Linkedin, Star, Search, MapPin, Megaphone, Printer, Download, Eye, LayoutGrid, Stethoscope, ShoppingCart
 } from "lucide-react";
 
 /* ---------------------------------------------------------
@@ -2089,7 +2089,7 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
             boxShadow: "0 8px 20px rgba(232,99,30,0.35)",
           }}>
-            <ShoppingBag size={16} /> {"View cart (" + cartCount + ")"}
+            <ShoppingCart size={16} /> {"View cart (" + cartCount + ")"}
           </button>
         </div>
       )}
@@ -2956,12 +2956,12 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
         </div>
 
         <div style={{
-          padding: "16px 20px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between",
           borderBottom: "1px solid #E3E7EE", background: "#F4F5F8",
         }}>
-          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 40, width: "auto", objectFit: "contain" }} />
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 52, width: "auto", objectFit: "contain" }} />
           <div style={{ position: "relative", cursor: "pointer" }} onClick={() => cartCount > 0 && blockCheckout()}>
-            <ShoppingBag size={18} color="#64707E" />
+            <ShoppingCart size={18} color="#64707E" />
             {cartCount > 0 && (
               <span style={{
                 position: "absolute", top: -6, right: -7, background: "#E8631E", color: "#fff",
@@ -5222,6 +5222,154 @@ function clinicTimeSlots(clinic, dateIso) {
   }
   return { slots, weekday: WEEKDAY_NAMES[day] };
 }
+/* ---------------------------------------------------------
+   REGISTRATION + PDPA CONSENT PDF -- generated automatically right
+   after a patient completes intake, and saved into their Documents
+   (category "Reports") as a permanent record of exactly what they
+   consented to and their signature, for compliance/record purposes.
+--------------------------------------------------------- */
+async function generateRegistrationPDF(email, draft) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 42;
+  const rightColX = 340;
+  const rightColW = pageWidth - marginX - rightColX;
+  const today = new Date().toISOString().slice(0, 10);
+
+  doc.addImage(LOGO_SRC, "PNG", marginX, 34, 118, 72);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Amazing Hearing Group Pte. Ltd", rightColX, 44, { maxWidth: rightColW });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  [
+    "Company/GST Reg. No.: 202219111Z", "8 Sinaran Drive", "02-01 Novena Specialist Centre",
+    "Singapore 307470", "Phone: 6285 3132", "hello@amazinghearing.com",
+  ].forEach((line, i) => doc.text(line, rightColX, 60 + i * 12));
+
+  let y = 150;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Patient Registration & PDPA Consent", marginX, y);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text("Registered " + formatDateDMY(today) + "  \u00b7  " + email, marginX, y);
+  y += 26;
+
+  const fullName = [draft.salutation, draft.firstName, draft.lastName].filter(Boolean).join(" ");
+  const sig = [draft.significantOtherSalutation, draft.significantOtherFirstName, draft.significantOtherLastName].filter(Boolean).join(" ");
+
+  const section = (title) => {
+    if (y > pageHeight - 90) { doc.addPage(); y = 48; }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 58, 109);
+    doc.text(title, marginX, y);
+    y += 6;
+    doc.setDrawColor(227, 231, 238);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 16;
+  };
+
+  const rows = (pairs) => {
+    const filtered = pairs.filter(([, v]) => v);
+    filtered.forEach(([label, value], i) => {
+      const colX = i % 2 === 0 ? marginX : marginX + (pageWidth - marginX * 2) / 2;
+      if (i % 2 === 0 && y > pageHeight - 60) { doc.addPage(); y = 48; }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 112, 126);
+      doc.text(label.toUpperCase(), colX, y);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(27, 36, 48);
+      doc.text(String(value), colX, y + 13, { maxWidth: (pageWidth - marginX * 2) / 2 - 12 });
+      if (i % 2 === 1 || i === filtered.length - 1) y += 32;
+    });
+  };
+
+  section("Patient Details");
+  rows([
+    ["Full name", fullName], ["Gender", draft.gender], ["Date of birth", draft.dob ? formatDateDMY(draft.dob) : ""],
+    ["Mobile", draft.mobile], ["Email", email], ["Nationality", draft.nationality],
+    ["Occupation", draft.occupation], ["Spoken languages", draft.spokenLanguages],
+    ["Address", draft.address], ["Postal code", draft.postalCode],
+  ]);
+  y += 8;
+
+  if (draft.referralSource || (draft.medicalReferral && draft.referralDoctorName)) {
+    section("Referral");
+    rows([
+      ["How they heard of us", draft.referralSource],
+      ["Referring doctor (GP/ENT)", draft.medicalReferral ? draft.referralDoctorName : ""],
+    ]);
+    y += 8;
+  }
+
+  if (sig || draft.significantOtherContact) {
+    section("Significant Other");
+    rows([
+      ["Name", sig], ["Relation", draft.significantOtherRelation],
+      ["Contact", draft.significantOtherContact], ["Email", draft.significantOtherEmail],
+    ]);
+    y += 8;
+  }
+
+  section("Personal Data Privacy Consent");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  const consentPara = doc.splitTextToSize(
+    "By signing below, you agree that Amazing Hearing Group Pte Ltd may collect, use and disclose your personal data provided in this form within our organization for the purposes below, in accordance with the Personal Data Protection Act 2012. Our data protection policy is available at amazinghearing.com/privacy-policy/.",
+    pageWidth - marginX * 2
+  );
+  doc.text(consentPara, marginX, y);
+  y += consentPara.length * 12 + 6;
+  [
+    "Audiological and medical records", "Reminders on reviews and follow-ups", "Doctor referral reports",
+    "Marketing materials with latest promotions, new products, and services",
+  ].forEach((line) => {
+    if (y > pageHeight - 40) { doc.addPage(); y = 48; }
+    doc.text("\u2022  " + line, marginX + 4, y);
+    y += 14;
+  });
+  y += 14;
+
+  if (y > pageHeight - 90) { doc.addPage(); y = 48; }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(27, 36, 48);
+  doc.text((draft.consentGiven ? "[X]" : "[ ]") + "  I have read and agree to the consent statement above.", marginX, y);
+  y += 34;
+
+  doc.setDrawColor(200, 205, 214);
+  doc.line(marginX, y, marginX + 220, y);
+  doc.line(marginX + 280, y, marginX + 420, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text("Signature (full name)", marginX, y);
+  doc.text("Date", marginX + 280, y);
+  y -= 20;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(27, 36, 48);
+  doc.text(draft.consentSignatureName || "", marginX, y);
+  doc.text(formatDateDMY(today), marginX + 280, y);
+
+  const safeName = fullName.replace(/[^a-z0-9]+/gi, "_") || "patient";
+  const fileName = "Registration_PDPA_" + safeName + "_" + today + ".pdf";
+  return { blob: doc.output("blob"), fileName };
+}
+
 const CONSULTANTS = ["Chongwei Low", "Dr. Sharad Govil", "Ivy Ng", "Rakshitha Sridharan", "Raynee Wu", "Sean Lee", "Zu Xuan Lee"];
 const KNOW_US_OPTIONS = ["Online Advertisement", "Google Search", "Walk-in", "Referral"];
 
@@ -5245,6 +5393,15 @@ function IntakeForm({ email, patientId, onFinish }) {
     setBusy(true);
     try {
       await db.completeIntake(patientId, draft);
+      // Best-effort: save a PDF record of exactly what they consented to and
+      // signed, for PDPA compliance. Registration has already succeeded above,
+      // so a PDF/upload hiccup here should never block the patient from continuing.
+      try {
+        const { blob, fileName } = await generateRegistrationPDF(email, draft);
+        await db.attachRegistrationDocument({ patientId, blob, fileName });
+      } catch (pdfErr) {
+        console.error("couldn't save registration PDF", pdfErr);
+      }
       setStep("hhiePrompt");
     } catch (e) {
       console.error(e);
@@ -5736,12 +5893,12 @@ export default function AmazingHearingApp() {
         display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
       }}>
         <div style={{
-          padding: "16px 20px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 20px 10px", display: "flex", alignItems: "center", justifyContent: "space-between",
           borderBottom: "1px solid #E3E7EE", background: "#F4F5F8",
         }}>
-          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 40, width: "auto", objectFit: "contain" }} />
+          <img src={LOGO_SRC} alt="Amazing Hearing" style={{ height: 52, width: "auto", objectFit: "contain" }} />
           <div style={{ position: "relative", cursor: "pointer" }} onClick={() => cartCount > 0 && setCheckoutOpen(true)}>
-            <ShoppingBag size={18} color="#64707E" />
+            <ShoppingCart size={18} color="#64707E" />
             {cartCount > 0 && (
               <span style={{
                 position: "absolute", top: -6, right: -7, background: "#E8631E", color: "#fff",

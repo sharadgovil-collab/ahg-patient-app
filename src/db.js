@@ -505,6 +505,23 @@ export async function addDocument(patientId, doc) {
   if (error) throw error;
 }
 
+// Saves the generated registration + PDPA consent PDF into the patient's
+// Documents (category "Reports") right after intake, so there's always a
+// record of what they consented to and their signature on file.
+export async function attachRegistrationDocument({ patientId, blob, fileName }) {
+  const path = patientId + "/" + Date.now() + "_" + fileName;
+  const { error: uploadError } = await supabase.storage.from("patient-documents").upload(path, blob, {
+    upsert: true, contentType: "application/pdf",
+  });
+  if (uploadError) throw uploadError;
+
+  const { error: docError } = await supabase.from("documents").insert({
+    patient_id: patientId, title: fileName, category: "Reports",
+    doc_date: new Date().toISOString().slice(0, 10), url: path, is_storage_path: true,
+  });
+  if (docError) throw docError;
+}
+
 export async function saveAudiogramHistory(patientId, history) {
   const keepIds = history.filter((a) => isUuid(a.id)).map((a) => a.id);
   await supabase.from("audiograms").delete().eq("patient_id", patientId).not("id", "in", `(${keepIds.length ? keepIds.join(",") : "00000000-0000-0000-0000-000000000000"})`);
