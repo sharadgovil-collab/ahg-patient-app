@@ -799,6 +799,28 @@ const AUDIOGRAM_CHANNELS = [
   { key: "leftBCMasked", type: "bc-masked", ear: "left" },
 ];
 
+const audiogramIsTested = (v) => v !== null && v !== undefined && v !== "";
+const audiogramDbFor = (v) => (v === "NR" || v === "nr" ? 120 : Number(v));
+
+// Masking is a refinement technique, not a separate hearing curve -- if a
+// frequency needed masking to get an accurate reading, that reading IS the
+// ear's threshold at that frequency, same as an unmasked reading elsewhere.
+// So AC-unmasked + AC-masked (and BC-unmasked + BC-masked) are merged into
+// ONE continuous per-ear line, with the masked value winning wherever both
+// exist at the same frequency (it's the more clinically accurate one).
+// Each point still renders with the correct symbol for where it came from.
+// Shared between the on-screen chart and the exported PDF so both always agree.
+function composeAudiogramChannel(unmaskedObj, maskedObj, freqs) {
+  const out = {};
+  freqs.forEach((f) => {
+    const mv = maskedObj && maskedObj[f];
+    const uv = unmaskedObj && unmaskedObj[f];
+    if (audiogramIsTested(mv) && !isNaN(audiogramDbFor(mv))) out[f] = { value: mv, masked: true };
+    else if (audiogramIsTested(uv) && !isNaN(audiogramDbFor(uv))) out[f] = { value: uv, masked: false };
+  });
+  return out;
+}
+
 function Audiogram({ freqs, primary, compare, animate = true }) {
   const w = 320, h = 236, padL = 34, padR = 14, padT = 16, padB = 28;
   const plotW = w - padL - padR, plotH = h - padT - padB;
@@ -822,51 +844,56 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
     return () => cancelAnimationFrame(raf);
   }, [animate, primary]);
 
-  const isTested = (v) => v !== null && v !== undefined && v !== "";
-  const dbFor = (v) => (v === "NR" || v === "nr" ? 120 : Number(v));
+  const isTested = audiogramIsTested;
+  const dbFor = audiogramDbFor;
+  const compose = (unmaskedObj, maskedObj) => composeAudiogramChannel(unmaskedObj, maskedObj, freqs);
 
-  // Threshold objects are keyed by frequency (e.g. obj[500]), not array
-  // position, so extending the tested frequency list never shifts other
-  // values. Untested frequencies (e.g. 3k/6k not always tested) are simply
-  // skipped -- the line connects straight through to the next tested point
-  // rather than breaking, since a gap there doesn't mean "unknown region",
-  // it just means that in-between point wasn't measured.
-  const segmentsFor = (obj) => {
-    if (!obj) return [];
+  // Untested frequencies (e.g. 3k/6k not always tested) are simply skipped --
+  // the line connects straight through to the next tested point rather than
+  // breaking, since a gap there doesn't mean "unknown region", it just means
+  // that in-between point wasn't measured.
+  const segmentsForComposite = (composite) => {
     const pts = [];
     freqs.forEach((f, i) => {
-      const v = obj[f];
-      if (!isTested(v) || isNaN(dbFor(v))) return;
-      pts.push([i, dbFor(v)]);
+      const c = composite[f];
+      if (!c) return;
+      pts.push([i, dbFor(c.value)]);
     });
     return pts.length > 1 ? [pts] : [];
   };
 
   const dashLen = 900;
 
-  const lineSeries = (obj, color, opts = {}) => {
-    const { dashed = false, animated = false } = opts;
-    return segmentsFor(obj).map((seg, si) => (
+  const lineSeries = (composite, color, opts = {}) => {
+    const { dashed = false, animated = false, thin = false } = opts;
+    return segmentsForComposite(composite).map((seg, si) => (
       <path key={si} d={seg.map(([i, db], k) => (k === 0 ? "M" : "L") + " " + xFor(i) + " " + yFor(db)).join(" ")}
-        fill="none" stroke={color} strokeWidth={dashed ? 1.5 : 2}
+        fill="none" stroke={color} strokeWidth={dashed ? 1.5 : thin ? 1.3 : 2}
         strokeDasharray={dashed ? "4 3" : (animated ? dashLen : undefined)}
         strokeDashoffset={animated ? dashLen * (1 - progress) : undefined}
-        opacity={dashed ? 0.45 : 1} />
+        opacity={dashed ? 0.45 : thin ? 0.75 : 1} />
     ));
   };
 
-  const symbolsFor = (data, chan) => {
-    const obj = data && data[chan.key];
-    if (!obj) return null;
+  const symbolsFor = (composite, ear, modality) => {
     return freqs.map((f, i) => {
-      const v = obj[f];
-      if (!isTested(v) || isNaN(dbFor(v))) return null;
-      const x = xFor(i), y = yFor(dbFor(v));
+      const c = composite[f];
+      if (!c) return null;
+      const x = xFor(i), y = yFor(dbFor(c.value));
+      const type = modality === "ac" ? (c.masked ? "ac-masked" : "ac-unmasked") : (c.masked ? "bc-masked" : "bc-unmasked");
       return progress > 0.8 ? (
-        <AudiogramSymbol key={chan.key + "-" + i} type={chan.type} ear={chan.ear} x={x} y={y} color={chan.ear === "right" ? "#C4573F" : "#1E3A6D"} nr={v === "NR" || v === "nr"} />
+        <AudiogramSymbol key={modality + "-" + ear + "-" + i} type={type} ear={ear} x={x} y={y}
+          color={ear === "right" ? "#C4573F" : "#1E3A6D"} nr={c.value === "NR" || c.value === "nr"} />
       ) : null;
     });
   };
+
+  const acRight = compose(primary.right, primary.rightACMasked);
+  const acLeft = compose(primary.left, primary.leftACMasked);
+  const bcRight = compose(primary.rightBC, primary.rightBCMasked);
+  const bcLeft = compose(primary.leftBC, primary.leftBCMasked);
+  const compareAcRight = compare ? compose(compare.right, compare.rightACMasked) : null;
+  const compareAcLeft = compare ? compose(compare.left, compare.leftACMasked) : null;
 
   return (
     <svg width="100%" viewBox={"0 0 " + w + " " + h} style={{ display: "block" }}>
@@ -887,15 +914,20 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
 
       {compare && (
         <>
-          {lineSeries(compare.right, "#C4573F", { dashed: true })}
-          {lineSeries(compare.left, "#1E3A6D", { dashed: true })}
+          {lineSeries(compareAcRight, "#C4573F", { dashed: true })}
+          {lineSeries(compareAcLeft, "#1E3A6D", { dashed: true })}
         </>
       )}
 
-      {lineSeries(primary.right, "#C4573F", { animated: true })}
-      {lineSeries(primary.left, "#1E3A6D", { animated: true })}
+      {lineSeries(bcRight, "#C4573F", { thin: true })}
+      {lineSeries(bcLeft, "#1E3A6D", { thin: true })}
+      {lineSeries(acRight, "#C4573F", { animated: true })}
+      {lineSeries(acLeft, "#1E3A6D", { animated: true })}
 
-      {AUDIOGRAM_CHANNELS.map((chan) => symbolsFor(primary, chan))}
+      {symbolsFor(acRight, "right", "ac")}
+      {symbolsFor(acLeft, "left", "ac")}
+      {symbolsFor(bcRight, "right", "bc")}
+      {symbolsFor(bcLeft, "left", "bc")}
     </svg>
   );
 }
@@ -1307,12 +1339,13 @@ function ThresholdGrid({ label, rightObj, leftObj, onChangeRight, onChangeLeft, 
   );
 }
 
-function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
+function ResultsTab({ audiogramHistory, sin, patientId, patientName = "", readOnly = false }) {
   const [sub, setSub] = useState("audiogram");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [compareIdx, setCompareIdx] = useState("");
   const { saved, save } = useQuestionnaireStore(patientId);
   const [active, setActive] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const primary = audiogramHistory[selectedIdx] || audiogramHistory[0];
   const compare = compareIdx !== "" ? audiogramHistory[Number(compareIdx)] : null;
@@ -1431,9 +1464,33 @@ function ResultsTab({ audiogramHistory, sin, patientId, readOnly = false }) {
           )}
 
           <Card>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
               <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>Audiogram</div>
-              <Pill>{"Tested " + formatDateDMY(primary.date)}</Pill>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Pill>{"Tested " + formatDateDMY(primary.date)}</Pill>
+                {primary.date !== "--" && (
+                  <button
+                    disabled={pdfBusy}
+                    onClick={async () => {
+                      setPdfBusy(true);
+                      try {
+                        await generateAudiogramPDF({ patientName, freqs: AUDIOGRAM_FREQS, primary, compare });
+                      } catch (e) {
+                        console.error(e);
+                      } finally {
+                        setPdfBusy(false);
+                      }
+                    }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 5, padding: "6px 9px", borderRadius: 8,
+                      border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
+                      fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11, cursor: pdfBusy ? "default" : "pointer", opacity: pdfBusy ? 0.6 : 1,
+                    }}
+                  >
+                    <Download size={13} /> {pdfBusy ? "Generating..." : "PDF"}
+                  </button>
+                )}
+              </div>
             </div>
             <Audiogram freqs={AUDIOGRAM_FREQS} primary={primary} compare={compare} />
             <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E" }}>
@@ -2979,7 +3036,7 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
           {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => {}} />}
-          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} readOnly />}
+          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} patientName={patientName} readOnly />}
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={blockCheckout} />}
@@ -3980,9 +4037,26 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [expandedAudiogram, setExpandedAudiogram] = useState({}); // { [rowIndex]: bool } -- shows AC-masked/BC fields
+  const [audiogramPdfBusy, setAudiogramPdfBusy] = useState(null); // index of test currently exporting
   const [regPdfBusy, setRegPdfBusy] = useState(false);
   const [regPdfError, setRegPdfError] = useState("");
+  const [summaryPdfBusy, setSummaryPdfBusy] = useState(false);
   const patientName = ((draft.profile.firstName || "") + " " + (draft.profile.lastName || "")).trim() || "Patient";
+
+  const exportFullSummaryPdf = async () => {
+    setSummaryPdfBusy(true);
+    try {
+      await generatePatientSummaryPDF({
+        patientName, profile: draft.profile, audiogramHistory: draft.audiogramHistory,
+        sin: draft.sin, cognitive: draft.cognitive, devices: draft.devices,
+        appointments: draft.appointments, documents: draft.documents, datalog: draft.datalog,
+        questionnaires: draft.questionnaires, invoices: draft.invoices,
+      });
+    } catch (e) {
+      console.error(e);
+    }
+    setSummaryPdfBusy(false);
+  };
 
   useEffect(() => { setDraft(data); }, [section]);
 
@@ -4051,6 +4125,12 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
               <span style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 17, color: "#1B2430" }}>Staff Admin</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div onClick={summaryPdfBusy ? undefined : exportFullSummaryPdf} style={{
+                display: "flex", alignItems: "center", gap: 5, cursor: summaryPdfBusy ? "default" : "pointer",
+                fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, color: "#1E3A6D", opacity: summaryPdfBusy ? 0.6 : 1,
+              }}>
+                <Download size={14} /> {summaryPdfBusy ? "Generating..." : "Export summary PDF"}
+              </div>
               <div onClick={() => setPreviewOpen(true)} style={{
                 display: "flex", alignItems: "center", gap: 5, cursor: "pointer",
                 fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, color: "#1E3A6D",
@@ -4170,14 +4250,37 @@ function AdminPanel({ data, patientId, role, onSave, onClose, onDeleted }) {
                 );
                 return (
                 <div key={a.id || i} style={{ border: "1px solid #E3E7EE", borderRadius: 12, padding: 14, marginBottom: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
                     <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 12.5, color: "#1E3A6D" }}>{"Test " + (i + 1) + (a.date ? " -- " + formatDateDMY(a.date) : "")}</span>
-                    {canDelete && (
-                      <Trash2 size={15} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => {
-                        const next = draft.audiogramHistory.filter((_, idx) => idx !== i);
-                        setDraft((p) => ({ ...p, audiogramHistory: next }));
-                      }} />
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <button
+                        disabled={audiogramPdfBusy === i}
+                        onClick={async () => {
+                          setAudiogramPdfBusy(i);
+                          try {
+                            await generateAudiogramPDF({ patientName, freqs: AUDIOGRAM_FREQS, primary: a, compare: null });
+                          } catch (e) {
+                            console.error(e);
+                          } finally {
+                            setAudiogramPdfBusy(null);
+                          }
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: 7,
+                          border: "1px solid #E3E7EE", background: "#fff", color: "#1E3A6D",
+                          fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 10.5,
+                          cursor: audiogramPdfBusy === i ? "default" : "pointer", opacity: audiogramPdfBusy === i ? 0.6 : 1,
+                        }}
+                      >
+                        <Download size={12} /> {audiogramPdfBusy === i ? "Generating..." : "Export PDF"}
+                      </button>
+                      {canDelete && (
+                        <Trash2 size={15} color="#C4573F" style={{ cursor: "pointer" }} onClick={() => {
+                          const next = draft.audiogramHistory.filter((_, idx) => idx !== i);
+                          setDraft((p) => ({ ...p, audiogramHistory: next }));
+                        }} />
+                      )}
+                    </div>
                   </div>
 
                   <FieldRow label="Test date">
@@ -5432,6 +5535,507 @@ async function generateRegistrationPDF({
   return { blob: doc.output("blob"), fileName };
 }
 
+/* ---------------------------------------------------------
+   AUDIOGRAM PDF -- vector-drawn to match the on-screen <Audiogram/>
+   chart exactly (same composeAudiogramChannel merge logic, same
+   ASHA symbol shapes), rather than rasterizing the SVG.
+--------------------------------------------------------- */
+// Draws one audiogram chart (grid, degree-of-loss shading, composite AC/BC
+// lines, ASHA symbols) onto an existing jsPDF doc at the given origin/size.
+// Shared by the single-test Audiogram PDF and the multi-page patient summary
+// PDF so both always render identically to each other (and to the on-screen
+// <Audiogram/> chart, via the same composeAudiogramChannel merge logic).
+// Returns { legendParts, rightPta, leftPta } for the caller to render below.
+function drawAudiogramChart(doc, { originX, originY, chartW, chartH, freqs, primary, compare }) {
+  const padL = 46, padR = 20, padT = 14, padB = 30;
+  const plotW = chartW - padL - padR, plotH = chartH - padT - padB;
+  const xFor = (i) => originX + padL + (i / (freqs.length - 1)) * plotW;
+  const yFor = (db) => originY + padT + (db / 120) * plotH;
+  const dbFor = audiogramDbFor;
+
+  doc.setGState(new doc.GState({ opacity: 0.06 }));
+  doc.setFillColor(110, 143, 106);
+  doc.rect(originX + padL, yFor(0), plotW, yFor(25) - yFor(0), "F");
+  doc.setGState(new doc.GState({ opacity: 0.07 }));
+  doc.setFillColor(232, 99, 30);
+  doc.rect(originX + padL, yFor(25), plotW, yFor(55) - yFor(25), "F");
+  doc.setFillColor(196, 87, 63);
+  doc.rect(originX + padL, yFor(55), plotW, yFor(120) - yFor(55), "F");
+  doc.setGState(new doc.GState({ opacity: 1 }));
+
+  doc.setDrawColor(227, 231, 238);
+  doc.setLineWidth(0.5);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(138, 150, 163);
+  [0, 20, 40, 60, 80, 100, 120].forEach((db) => {
+    doc.line(originX + padL, yFor(db), originX + padL + plotW, yFor(db));
+    doc.text(String(db), originX + padL - 6, yFor(db) + 2.5, { align: "right" });
+  });
+  freqs.forEach((f, i) => {
+    doc.text(f >= 1000 ? (f / 1000) + "k" : String(f), xFor(i), originY + chartH - 6, { align: "center" });
+  });
+
+  const drawComposite = (composite, color, opts = {}) => {
+    const { dashed = false, thin = false } = opts;
+    const pts = [];
+    freqs.forEach((f, i) => { if (composite[f]) pts.push([i, dbFor(composite[f].value)]); });
+    if (pts.length < 2) return;
+    doc.setDrawColor(color[0], color[1], color[2]);
+    doc.setLineWidth(dashed ? 0.9 : thin ? 1 : 1.4);
+    doc.setLineDashPattern(dashed ? [3, 2] : [], 0);
+    for (let k = 1; k < pts.length; k++) {
+      doc.line(xFor(pts[k - 1][0]), yFor(pts[k - 1][1]), xFor(pts[k][0]), yFor(pts[k][1]));
+    }
+    doc.setLineDashPattern([], 0);
+  };
+
+  const drawSymbols = (composite, ear, modality, color) => {
+    doc.setDrawColor(color[0], color[1], color[2]);
+    doc.setLineWidth(1.1);
+    freqs.forEach((f, i) => {
+      const c = composite[f];
+      if (!c) return;
+      const x = xFor(i), y0 = yFor(dbFor(c.value));
+      const s = 3.6;
+      if (modality === "ac" && !c.masked) {
+        if (ear === "right") doc.circle(x, y0, s, "S");
+        else { doc.line(x - s, y0 - s, x + s, y0 + s); doc.line(x - s, y0 + s, x + s, y0 - s); }
+      } else if (modality === "ac" && c.masked) {
+        if (ear === "right") doc.triangle(x, y0 - s * 1.15, x - s * 1.05, y0 + s * 0.8, x + s * 1.05, y0 + s * 0.8, "S");
+        else doc.rect(x - s * 0.85, y0 - s * 0.85, s * 1.7, s * 1.7, "S");
+      } else if (modality === "bc" && !c.masked) {
+        if (ear === "right") { doc.line(x + s * 0.8, y0 - s, x - s * 0.6, y0); doc.line(x - s * 0.6, y0, x + s * 0.8, y0 + s); }
+        else { doc.line(x - s * 0.8, y0 - s, x + s * 0.6, y0); doc.line(x + s * 0.6, y0, x - s * 0.8, y0 + s); }
+      } else if (modality === "bc" && c.masked) {
+        if (ear === "right") { doc.line(x + s * 0.7, y0 - s, x - s * 0.7, y0 - s); doc.line(x - s * 0.7, y0 - s, x - s * 0.7, y0 + s); doc.line(x - s * 0.7, y0 + s, x + s * 0.7, y0 + s); }
+        else { doc.line(x - s * 0.7, y0 - s, x + s * 0.7, y0 - s); doc.line(x + s * 0.7, y0 - s, x + s * 0.7, y0 + s); doc.line(x + s * 0.7, y0 + s, x - s * 0.7, y0 + s); }
+      }
+      if (c.value === "NR" || c.value === "nr") {
+        doc.setLineWidth(0.9);
+        const dx = ear === "right" ? 1 : -1;
+        doc.line(x + s * 0.7 * dx, y0 + s * 0.7, x + s * 1.9 * dx, y0 + s * 1.9);
+        doc.setLineWidth(1.1);
+      }
+    });
+  };
+
+  const RED = [196, 87, 63], BLUE = [30, 58, 109];
+  const acRight = composeAudiogramChannel(primary.right, primary.rightACMasked, freqs);
+  const acLeft = composeAudiogramChannel(primary.left, primary.leftACMasked, freqs);
+  const bcRight = composeAudiogramChannel(primary.rightBC, primary.rightBCMasked, freqs);
+  const bcLeft = composeAudiogramChannel(primary.leftBC, primary.leftBCMasked, freqs);
+
+  if (compare) {
+    drawComposite(composeAudiogramChannel(compare.right, compare.rightACMasked, freqs), RED, { dashed: true });
+    drawComposite(composeAudiogramChannel(compare.left, compare.leftACMasked, freqs), BLUE, { dashed: true });
+  }
+  drawComposite(bcRight, RED, { thin: true });
+  drawComposite(bcLeft, BLUE, { thin: true });
+  drawComposite(acRight, RED);
+  drawComposite(acLeft, BLUE);
+  drawSymbols(acRight, "right", "ac", RED);
+  drawSymbols(acLeft, "left", "ac", BLUE);
+  drawSymbols(bcRight, "right", "bc", RED);
+  drawSymbols(bcLeft, "left", "bc", BLUE);
+
+  const chanUsed = (key) => hasAnyThreshold(primary[key]) || (compare && hasAnyThreshold(compare[key]));
+  const showACMasked = chanUsed("rightACMasked") || chanUsed("leftACMasked");
+  const showBC = chanUsed("rightBC") || chanUsed("leftBC");
+  const showBCMasked = chanUsed("rightBCMasked") || chanUsed("leftBCMasked");
+  const hasNR = [primary, compare].filter(Boolean).some((a) =>
+    ["right", "left", "rightACMasked", "leftACMasked", "rightBC", "leftBC", "rightBCMasked", "leftBCMasked"].some(
+      (k) => a[k] && Object.values(a[k]).some((v) => v === "NR" || v === "nr")
+    )
+  );
+  const legendParts = ["O = Right ear (AC)", "X = Left ear (AC)"];
+  if (showACMasked) legendParts.push("Triangle/Square = AC masked");
+  if (showBC) legendParts.push("< > = BC unmasked");
+  if (showBCMasked) legendParts.push("[ ] = BC masked");
+  if (hasNR) legendParts.push("Arrow = no response (NR)");
+  if (compare) legendParts.push("Dashed = " + formatDateDMY(compare.date));
+
+  return { legendParts, rightPta: calcPTA(primary.right), leftPta: calcPTA(primary.left) };
+}
+
+async function generateAudiogramPDF({ patientName, freqs, primary, compare }) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 42;
+  const rightColX = 340;
+  const rightColW = pageWidth - marginX - rightColX;
+  const today = new Date().toISOString().slice(0, 10);
+
+  doc.addImage(LOGO_SRC, "PNG", marginX, 34, 118, 72);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Amazing Hearing Group Pte. Ltd", rightColX, 44, { maxWidth: rightColW });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(70, 80, 92);
+  [
+    "Company/GST Reg. No.: 202219111Z", "8 Sinaran Drive", "02-01 Novena Specialist Centre",
+    "Singapore 307470", "Phone: 6285 3132", "hello@amazinghearing.com",
+  ].forEach((line, i) => doc.text(line, rightColX, 60 + i * 12));
+
+  let y = 150;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Audiogram Report", marginX, y);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text(
+    (patientName || "") + "  \u00b7  Tested " + formatDateDMY(primary.date) + (compare ? "  \u00b7  vs. " + formatDateDMY(compare.date) : ""),
+    marginX, y
+  );
+  y += 30;
+
+  const chartW = pageWidth - marginX * 2;
+  const chartH = 300;
+  const { legendParts, rightPta, leftPta } = drawAudiogramChart(doc, { originX: marginX, originY: y, chartW, chartH, freqs, primary, compare });
+  y += chartH + 22;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 112, 126);
+  doc.text(doc.splitTextToSize(legendParts.join("    "), chartW), marginX, y);
+  y += 24;
+
+  doc.setDrawColor(227, 231, 238);
+  doc.line(marginX, y, pageWidth - marginX, y);
+  y += 18;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(27, 36, 48);
+  doc.text("Summary", marginX, y);
+  y += 18;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(100, 112, 126);
+  doc.text("Right Ear:", marginX, y);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(27, 36, 48);
+  doc.text(rightPta !== null ? rightPta + " dBHL - " + hearingDegree(primary.right) : "--", marginX + 70, y);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 112, 126);
+  doc.text("Left Ear:", marginX, y);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(27, 36, 48);
+  doc.text(leftPta !== null ? leftPta + " dBHL - " + hearingDegree(primary.left) : "--", marginX + 70, y);
+
+  const safeAudioName = (patientName || "").replace(/[^a-z0-9]+/gi, "_") || "patient";
+  doc.save("Audiogram_" + safeAudioName + "_" + (primary.date || today) + ".pdf");
+}
+
+/* ---------------------------------------------------------
+   FULL PATIENT SUMMARY PDF -- multi-page export covering everything on
+   file for a patient: profile, every audiogram (with charts), SIN,
+   cognitive screening, devices, appointments, questionnaires, documents
+   index, datalogging, and billing. Reuses the same drawing helpers as
+   the standalone Registration and Audiogram PDFs so all three always
+   read consistently.
+--------------------------------------------------------- */
+async function generatePatientSummaryPDF({
+  patientName, profile, audiogramHistory = [], sin, cognitive, devices = [],
+  appointments = [], documents = [], datalog, questionnaires = [], invoices = [],
+}) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const marginX = 42;
+  const rightColX = 340;
+  const rightColW = pageWidth - marginX - rightColX;
+  const today = new Date().toISOString().slice(0, 10);
+  let y = 0;
+
+  const addLetterhead = (title, subtitle) => {
+    doc.addImage(LOGO_SRC, "PNG", marginX, 34, 118, 72);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(27, 36, 48);
+    doc.text("Amazing Hearing Group Pte. Ltd", rightColX, 44, { maxWidth: rightColW });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(70, 80, 92);
+    [
+      "Company/GST Reg. No.: 202219111Z", "8 Sinaran Drive", "02-01 Novena Specialist Centre",
+      "Singapore 307470", "Phone: 6285 3132", "hello@amazinghearing.com",
+    ].forEach((line, i) => doc.text(line, rightColX, 60 + i * 12));
+    y = 150;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(27, 36, 48);
+    doc.text(title, marginX, y);
+    y += 16;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(100, 112, 126);
+    doc.text(subtitle, marginX, y);
+    y += 26;
+  };
+
+  const newPage = (title, subtitle) => { doc.addPage(); addLetterhead(title, subtitle); };
+  const ensureSpace = (needed, title, subtitle) => { if (y + needed > pageHeight - 40) newPage(title, subtitle); };
+
+  const sectionHeading = (label) => {
+    ensureSpace(40, "Patient Summary Report", patientName + "  ·  continued");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(30, 58, 109);
+    doc.text(label, marginX, y);
+    y += 6;
+    doc.setDrawColor(227, 231, 238);
+    doc.setLineWidth(1);
+    doc.line(marginX, y, pageWidth - marginX, y);
+    y += 18;
+  };
+
+  const rows2col = (pairs) => {
+    const filtered = pairs.filter(([, v]) => v !== null && v !== undefined && v !== "");
+    if (!filtered.length) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(138, 150, 163);
+      doc.text("No information on file.", marginX, y);
+      y += 20;
+      return;
+    }
+    filtered.forEach(([label, value], i) => {
+      const colX = i % 2 === 0 ? marginX : marginX + (pageWidth - marginX * 2) / 2;
+      if (i % 2 === 0) ensureSpace(36, "Patient Summary Report", patientName + "  ·  continued");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 112, 126);
+      doc.text(String(label).toUpperCase(), colX, y);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(27, 36, 48);
+      doc.text(String(value), colX, y + 13, { maxWidth: (pageWidth - marginX * 2) / 2 - 12 });
+      if (i % 2 === 1 || i === filtered.length - 1) y += 32;
+    });
+    y += 6;
+  };
+
+  // Simple ledger-style table: header row + one row per record, with
+  // automatic page-break continuation (re-printing the header) if a table
+  // runs past the bottom margin.
+  const table = (columns, records, emptyLabel) => {
+    if (!records.length) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(138, 150, 163);
+      doc.text(emptyLabel, marginX, y);
+      y += 20;
+      return;
+    }
+    const totalW = pageWidth - marginX * 2;
+    const drawHeader = () => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 112, 126);
+      let cx = marginX;
+      columns.forEach((c) => { doc.text(c.label.toUpperCase(), cx, y); cx += c.w; });
+      y += 6;
+      doc.setDrawColor(227, 231, 238);
+      doc.setLineWidth(0.75);
+      doc.line(marginX, y, marginX + totalW, y);
+      y += 14;
+    };
+    drawHeader();
+    records.forEach((rec) => {
+      const cellLines = columns.map((c) => doc.splitTextToSize(String(c.value(rec) ?? "--"), c.w - 8));
+      const rowH = Math.max(...cellLines.map((l) => l.length)) * 11 + 8;
+      if (y + rowH > pageHeight - 40) {
+        newPage("Patient Summary Report", patientName + "  ·  continued");
+        drawHeader();
+      }
+      let cx = marginX;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(27, 36, 48);
+      columns.forEach((c, ci) => { doc.text(cellLines[ci], cx, y); cx += c.w; });
+      y += rowH;
+      doc.setDrawColor(240, 239, 234);
+      doc.setLineWidth(0.5);
+      doc.line(marginX, y - 4, marginX + totalW, y - 4);
+    });
+    y += 10;
+  };
+
+  /* ---- Page 1: Patient details ---- */
+  addLetterhead("Patient Summary Report", patientName + "  ·  Generated " + formatDateDMY(today));
+
+  sectionHeading("Patient Details");
+  const age = calcAge(profile.dob);
+  rows2col([
+    ["Full name", patientName], ["Gender", profile.gender],
+    ["Date of birth", profile.dob ? formatDateDMY(profile.dob) + (age !== null ? " (age " + age + ")" : "") : ""],
+    ["Mobile", profile.mobile], ["Email", profile.email], ["Nationality", profile.nationality],
+    ["Occupation", profile.occupation], ["Spoken languages", profile.spokenLanguages],
+    ["Address", [profile.address, profile.postalCode].filter(Boolean).join(", ")],
+    ["Clinician", profile.audiologist], ["Home clinic", profile.clinic],
+  ]);
+
+  /* ---- Hearing test results (one chart per audiogram on file) ---- */
+  sectionHeading("Hearing Test Results (Audiograms)");
+  if (!audiogramHistory.length) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(138, 150, 163);
+    doc.text("No hearing tests on file.", marginX, y);
+    y += 20;
+  } else {
+    const freqs = AUDIOGRAM_FREQS;
+    audiogramHistory.forEach((test, idx) => {
+      const chartH = 260;
+      ensureSpace(chartH + 90, "Patient Summary Report", patientName + "  ·  continued");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(27, 36, 48);
+      doc.text("Test " + (idx + 1) + " -- " + formatDateDMY(test.date), marginX, y);
+      y += 12;
+      const chartW = pageWidth - marginX * 2;
+      const { legendParts, rightPta, leftPta } = drawAudiogramChart(doc, { originX: marginX, originY: y, chartW, chartH, freqs, primary: test, compare: null });
+      y += chartH + 12;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 112, 126);
+      doc.text(doc.splitTextToSize(legendParts.join("    "), chartW), marginX, y);
+      y += 16;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
+      doc.setTextColor(100, 112, 126);
+      doc.text("Right: ", marginX, y);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(27, 36, 48);
+      doc.text((rightPta !== null ? rightPta + " dBHL - " + hearingDegree(test.right) : "--") + "    ", marginX + 32, y);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 112, 126);
+      doc.text("Left: ", marginX + 220, y);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(27, 36, 48);
+      doc.text(leftPta !== null ? leftPta + " dBHL - " + hearingDegree(test.left) : "--", marginX + 250, y);
+      y += 26;
+    });
+  }
+
+  /* ---- Speech-in-Noise ---- */
+  sectionHeading("Speech-in-Noise (SIN)");
+  if (sin && sin.date && sin.date !== "--") {
+    const cat = sinCategory(sin.srtDb);
+    rows2col([
+      ["Test date", formatDateDMY(sin.date)], ["SNR score", "+" + sin.srtDb + " dB"],
+      ["Category", cat.label], ["What this means", cat.detail],
+    ]);
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(138, 150, 163);
+    doc.text("Not yet tested.", marginX, y);
+    y += 20;
+  }
+
+  /* ---- Cognitive screening ---- */
+  sectionHeading("Cognitive Screening");
+  if (cognitive && (cognitive.score || cognitive.interpretation)) {
+    rows2col([
+      ["Test date", cognitive.testDate ? formatDateDMY(cognitive.testDate) : ""],
+      ["Score", cognitive.score], ["Interpretation", cognitive.interpretation], ["Notes", cognitive.notes],
+    ]);
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(138, 150, 163);
+    doc.text("Not yet tested.", marginX, y);
+    y += 20;
+  }
+
+  /* ---- Devices ---- */
+  sectionHeading("Hearing Aid Devices");
+  table(
+    [
+      { label: "Ear", w: 45, value: (d) => d.ear },
+      { label: "Model", w: 130, value: (d) => d.model },
+      { label: "Serial", w: 95, value: (d) => d.serial },
+      { label: "Fitted", w: 65, value: (d) => formatDateDMY(d.fitted) },
+      { label: "Warranty", w: 65, value: (d) => formatDateDMY(d.warranty) },
+      { label: "Last serviced", w: 111, value: (d) => formatDateDMY(d.lastService) },
+    ],
+    devices, "No devices on file."
+  );
+  if (datalog) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(100, 112, 126);
+    doc.text("Datalogging: ", marginX, y);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(27, 36, 48);
+    doc.text((datalog.avgWear || 0) + " hrs/day average, last synced " + (datalog.lastSynced || "Never"), marginX + 80, y);
+    y += 24;
+  }
+
+  /* ---- Appointments ---- */
+  sectionHeading("Appointments");
+  table(
+    [
+      { label: "Type", w: 130, value: (a) => a.type },
+      { label: "Date", w: 65, value: (a) => formatDateDMY(a.date) },
+      { label: "Time", w: 55, value: (a) => a.time },
+      { label: "Clinic", w: 130, value: (a) => a.clinic },
+      { label: "Status", w: 71, value: (a) => a.status },
+    ],
+    appointments, "No appointments on file."
+  );
+
+  /* ---- Questionnaires ---- */
+  sectionHeading("Questionnaires");
+  const qById = Object.fromEntries(QUESTIONNAIRES.map((q) => [q.id, q]));
+  table(
+    [
+      { label: "Questionnaire", w: 130, value: (r) => (qById[r.questionnaireId] ? qById[r.questionnaireId].short : r.questionnaireId) },
+      { label: "Score", w: 80, value: (r) => String(r.score) + (r.maxScore ? " / " + r.maxScore : "") },
+      { label: "Band", w: 155, value: (r) => r.band },
+      { label: "Completed", w: 86, value: (r) => formatDateDMY(r.completedAt) },
+    ],
+    questionnaires, "No questionnaires completed."
+  );
+
+  /* ---- Documents on file ---- */
+  sectionHeading("Documents on File");
+  table(
+    [
+      { label: "Title", w: 220, value: (d) => d.title },
+      { label: "Category", w: 130, value: (d) => d.category },
+      { label: "Date", w: 101, value: (d) => formatDateDMY(d.date) },
+    ],
+    documents, "No documents on file."
+  );
+
+  /* ---- Billing ---- */
+  sectionHeading("Invoices");
+  table(
+    [
+      { label: "Invoice #", w: 90, value: (r) => "APP-" + String(r.invoiceNumber).padStart(6, "0") },
+      { label: "Date", w: 90, value: (r) => formatDateDMY((r.createdAt || "").slice(0, 10)) },
+      { label: "Amount", w: 90, value: (r) => "S$" + Number(r.amountTotal || 0).toFixed(2) },
+      { label: "Refunded", w: 90, value: (r) => (r.refundedAmount ? "S$" + Number(r.refundedAmount).toFixed(2) : "--") },
+      { label: "", w: 91, value: () => "" },
+    ],
+    invoices, "No invoices on file."
+  );
+
+  const safeName = (patientName || "").replace(/[^a-z0-9]+/gi, "_") || "patient";
+  doc.save("Patient_Summary_" + safeName + "_" + today + ".pdf");
+}
+
 const CONSULTANTS = ["Chongwei Low", "Dr. Sharad Govil", "Ivy Ng", "Rakshitha Sridharan", "Raynee Wu", "Sean Lee", "Zu Xuan Lee"];
 const KNOW_US_OPTIONS = ["Online Advertisement", "Google Search", "Walk-in", "Referral"];
 
@@ -5984,7 +6588,7 @@ export default function AmazingHearingApp() {
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 90px" }}>
           {tab === "home" && <HomeTab setTab={setTab} profile={profile} appointments={appointments} onEditProfile={() => setEditProfileOpen(true)} />}
-          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} />}
+          {tab === "results" && <ResultsTab audiogramHistory={audiogramHistory.length ? audiogramHistory : [{ id: "none", date: "--", right: {}, left: {} }]} sin={sin} patientId={patientId} patientName={(profile.firstName || "") + " " + (profile.lastName || "")} />}
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={() => setCheckoutOpen(true)} />}
