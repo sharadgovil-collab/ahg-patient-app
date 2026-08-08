@@ -821,7 +821,7 @@ function composeAudiogramChannel(unmaskedObj, maskedObj, freqs) {
   return out;
 }
 
-function Audiogram({ freqs, primary, compare, animate = true }) {
+function Audiogram({ freqs, primary, compare, animate = true, mode = "both" }) {
   const w = 320, h = 236, padL = 34, padR = 14, padT = 16, padB = 28;
   const plotW = w - padL - padR, plotH = h - padT - padB;
   const xFor = (i) => padL + (i / (freqs.length - 1)) * plotW;
@@ -888,12 +888,16 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
     });
   };
 
+  const showAC = mode !== "bc";
+  const showBC = mode !== "ac";
   const acRight = compose(primary.right, primary.rightACMasked);
   const acLeft = compose(primary.left, primary.leftACMasked);
   const bcRight = compose(primary.rightBC, primary.rightBCMasked);
   const bcLeft = compose(primary.leftBC, primary.leftBCMasked);
   const compareAcRight = compare ? compose(compare.right, compare.rightACMasked) : null;
   const compareAcLeft = compare ? compose(compare.left, compare.leftACMasked) : null;
+  const compareBcRight = compare ? compose(compare.rightBC, compare.rightBCMasked) : null;
+  const compareBcLeft = compare ? compose(compare.leftBC, compare.leftBCMasked) : null;
 
   return (
     <svg width="100%" viewBox={"0 0 " + w + " " + h} style={{ display: "block" }}>
@@ -912,22 +916,28 @@ function Audiogram({ freqs, primary, compare, animate = true }) {
       <rect x={padL} y={yFor(25)} width={plotW} height={yFor(55) - yFor(25)} fill="#E8631E" opacity="0.07" />
       <rect x={padL} y={yFor(55)} width={plotW} height={yFor(120) - yFor(55)} fill="#C4573F" opacity="0.07" />
 
-      {compare && (
+      {compare && showAC && (
         <>
           {lineSeries(compareAcRight, "#C4573F", { dashed: true })}
           {lineSeries(compareAcLeft, "#1E3A6D", { dashed: true })}
         </>
       )}
+      {compare && showBC && (
+        <>
+          {lineSeries(compareBcRight, "#C4573F", { dashed: true, thin: true })}
+          {lineSeries(compareBcLeft, "#1E3A6D", { dashed: true, thin: true })}
+        </>
+      )}
 
-      {lineSeries(bcRight, "#C4573F", { thin: true })}
-      {lineSeries(bcLeft, "#1E3A6D", { thin: true })}
-      {lineSeries(acRight, "#C4573F", { animated: true })}
-      {lineSeries(acLeft, "#1E3A6D", { animated: true })}
+      {showBC && lineSeries(bcRight, "#C4573F", { thin: true })}
+      {showBC && lineSeries(bcLeft, "#1E3A6D", { thin: true })}
+      {showAC && lineSeries(acRight, "#C4573F", { animated: true })}
+      {showAC && lineSeries(acLeft, "#1E3A6D", { animated: true })}
 
-      {symbolsFor(acRight, "right", "ac")}
-      {symbolsFor(acLeft, "left", "ac")}
-      {symbolsFor(bcRight, "right", "bc")}
-      {symbolsFor(bcLeft, "left", "bc")}
+      {showAC && symbolsFor(acRight, "right", "ac")}
+      {showAC && symbolsFor(acLeft, "left", "ac")}
+      {showBC && symbolsFor(bcRight, "right", "bc")}
+      {showBC && symbolsFor(bcLeft, "left", "bc")}
     </svg>
   );
 }
@@ -1346,6 +1356,7 @@ function ResultsTab({ audiogramHistory, sin, patientId, patientName = "", readOn
   const { saved, save } = useQuestionnaireStore(patientId);
   const [active, setActive] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [channelMode, setChannelMode] = useState("both"); // "ac" | "bc" | "both" -- which conduction type the chart displays
 
   const primary = audiogramHistory[selectedIdx] || audiogramHistory[0];
   const compare = compareIdx !== "" ? audiogramHistory[Number(compareIdx)] : null;
@@ -1492,27 +1503,42 @@ function ResultsTab({ audiogramHistory, sin, patientId, patientName = "", readOn
                 )}
               </div>
             </div>
-            <Audiogram freqs={AUDIOGRAM_FREQS} primary={primary} compare={compare} />
+            <Audiogram freqs={AUDIOGRAM_FREQS} primary={primary} compare={compare} mode={channelMode} />
+            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              {[["ac", "AC"], ["bc", "BC"], ["both", "Both"]].map(([key, label]) => (
+                <button key={key} onClick={() => setChannelMode(key)} style={{
+                  flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid #E3E7EE",
+                  background: channelMode === key ? "#1E3A6D" : "#fff", color: channelMode === key ? "#fff" : "#1B2430",
+                  fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, cursor: "pointer",
+                }}>
+                  {label}
+                </button>
+              ))}
+            </div>
             <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap", fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid #C4573F" }} /> Right ear (AC)
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&times;</span> Left ear (AC)
-              </div>
-              {showACMasked && (
+              {channelMode !== "bc" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", border: "2px solid #C4573F" }} /> Right ear (AC)
+                </div>
+              )}
+              {channelMode !== "bc" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&times;</span> Left ear (AC)
+                </div>
+              )}
+              {channelMode !== "bc" && showACMasked && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ color: "#C4573F", fontWeight: 700 }}>&#9651;</span>
                   <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&#9633;</span> AC masked
                 </div>
               )}
-              {showBC && (
+              {channelMode !== "ac" && showBC && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ color: "#C4573F", fontWeight: 700 }}>&lt;</span>
                   <span style={{ color: "#1E3A6D", fontWeight: 700 }}>&gt;</span> BC unmasked
                 </div>
               )}
-              {showBCMasked && (
+              {channelMode !== "ac" && showBCMasked && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ color: "#C4573F", fontWeight: 700 }}>[</span>
                   <span style={{ color: "#1E3A6D", fontWeight: 700 }}>]</span> BC masked
