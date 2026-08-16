@@ -5048,20 +5048,39 @@ function AddPatientModal({ onClose, onCreated }) {
   );
 }
 
+// Staff sign-in: a device that already remembers a staff email goes straight to a
+// PIN box (fast, day-to-day path). A new/unrecognized device asks for the company
+// email instead and sends a sign-in link -- same mechanism patients already use.
 function StaffPinGate({ onSuccess, onClose }) {
+  const remembered = db.getRememberedStaffEmail();
+  const [mode, setMode] = useState(remembered ? "pin" : "email"); // email | pin | sent
+  const [email, setEmail] = useState(remembered || "");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
 
-  const submit = async () => {
+  const sendLink = async () => {
+    if (!email || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await db.sendStaffSignInLink(email);
+      setMode("sent");
+    } catch (e) {
+      setError(e.message || "Couldn't send the link -- try again");
+    }
+    setBusy(false);
+  };
+
+  const submitPin = async () => {
     if (!pin || busy) return;
     setBusy(true);
-    setError(false);
+    setError("");
     try {
-      const user = await db.signInStaffWithPin(pin);
+      const user = await db.signInStaffWithDevicePin(email, pin);
       await onSuccess(user);
     } catch (e) {
-      setError(true);
+      setError("Incorrect PIN");
       setPin("");
       setBusy(false);
     }
@@ -5074,20 +5093,117 @@ function StaffPinGate({ onSuccess, onClose }) {
           <KeyRound size={20} color="#1E3A6D" />
         </div>
         <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", margin: "0 0 4px" }}>Staff access</h3>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter your PIN to view and edit patient records.</p>
-        <input
-          type="password" value={pin} onChange={(e) => { setPin(e.target.value); setError(false); }}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 8, borderColor: error ? "#C4573F" : "#E3E7EE" }}
-          placeholder="****" autoFocus disabled={busy}
-        />
-        {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>Incorrect PIN</div>}
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Cancel</button>
-          <button onClick={submit} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#1E3A6D", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-            {busy ? "Checking..." : "Enter"}
-          </button>
+
+        {mode === "pin" && (
+          <>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 4px" }}>{email}</p>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter your personal PIN.</p>
+            <input
+              type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && submitPin()}
+              style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 8, borderColor: error ? "#C4573F" : "#E3E7EE" }}
+              placeholder="******" autoFocus disabled={busy} maxLength={6}
+            />
+            {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{error}</div>}
+            <div
+              onClick={() => { db.forgetStaffEmail(); setMode("email"); setEmail(""); setPin(""); setError(""); }}
+              style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", cursor: "pointer", marginBottom: 12 }}
+            >
+              Not you? Sign in with a different email
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Cancel</button>
+              <button onClick={submitPin} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#1E3A6D", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+                {busy ? "Checking..." : "Enter"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === "email" && (
+          <>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>New device -- enter your @amazinghearing.com email and we'll send you a sign-in link.</p>
+            <input
+              type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && sendLink()}
+              style={{ ...inputStyle, textAlign: "center", fontSize: 14, marginBottom: 8 }}
+              placeholder="you@amazinghearing.com" autoFocus disabled={busy}
+            />
+            {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{error}</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Cancel</button>
+              <button onClick={sendLink} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#1E3A6D", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+                {busy ? "Sending..." : "Send link"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {mode === "sent" && (
+          <>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", margin: "0 0 16px", lineHeight: 1.6 }}>
+              {"We've sent a sign-in link to " + email + ". Open it on this device to continue."}
+            </p>
+            <button onClick={onClose} style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Close</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Shown once, right after a staff member's very first sign-in, so they can choose
+// the personal PIN they'll use on this and future devices from now on.
+function StaffPinSetup({ email, onDone }) {
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (busy) return;
+    if (!/^[0-9]{6}$/.test(pin)) { setError("Choose a 6-digit PIN"); return; }
+    if (pin !== confirmPin) { setError("PINs don't match"); return; }
+    setBusy(true);
+    setError("");
+    try {
+      await db.setStaffPin(pin);
+      db.rememberStaffEmailOnDevice(email);
+      onDone();
+    } catch (e) {
+      setError(e.message || "Couldn't set your PIN -- try again");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 340, width: "100%", textAlign: "center" }}>
+        <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <KeyRound size={20} color="#1E3A6D" />
         </div>
+        <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", margin: "0 0 4px" }}>Choose your PIN</h3>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 18px", lineHeight: 1.6 }}>
+          You're signed in as {email}. Set a personal 6-digit PIN -- you'll use it to sign back in on this and future devices.
+        </p>
+        <input
+          type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setError(""); }}
+          style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 10 }}
+          placeholder="New PIN" autoFocus disabled={busy} maxLength={6}
+        />
+        <input
+          type="password" inputMode="numeric" value={confirmPin} onChange={(e) => { setConfirmPin(e.target.value); setError(""); }}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 8 }}
+          placeholder="Confirm PIN" disabled={busy} maxLength={6}
+        />
+        {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{error}</div>}
+        <button onClick={submit} disabled={busy} style={{
+          width: "100%", padding: "12px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff", border: "none",
+          fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, marginTop: 4,
+        }}>
+          {busy ? "Saving..." : "Save PIN"}
+        </button>
       </div>
     </div>
   );
@@ -5105,6 +5221,134 @@ function daysAgoLabel(isoTimestamp) {
   if (months < 12) return "Active " + months + (months === 1 ? " month ago" : " months ago");
   const years = Math.floor(months / 12);
   return "Active " + years + (years === 1 ? " year ago" : " years ago");
+}
+
+const smallBtnStyle = {
+  padding: "8px 12px", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff",
+  color: "#1B2430", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, cursor: "pointer", whiteSpace: "nowrap",
+};
+
+function StaffManager({ currentUserId }) {
+  const [staff, setStaff] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try { setStaff(await db.fetchAllStaff()); } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggleRole = async (row) => {
+    setBusyId(row.userId);
+    try {
+      await db.updateStaffRole(row.userId, row.role === "super_admin" ? "staff" : "super_admin");
+      await load();
+    } catch (e) { console.error(e); }
+    setBusyId(null);
+  };
+
+  const toggleActive = async (row) => {
+    setBusyId(row.userId);
+    try {
+      await db.setStaffActive(row.userId, !row.active);
+      await load();
+    } catch (e) { console.error(e); }
+    setBusyId(null);
+  };
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <SectionLabel>Staff</SectionLabel>
+        <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Team access</h2>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "6px 0 0", lineHeight: 1.5 }}>
+          Anyone who signs in with an @amazinghearing.com email gets Admin access automatically. Promote someone to Super Admin here, or deactivate access for anyone who's left.
+        </p>
+      </div>
+      {loading ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading team...</div>
+      ) : staff.length === 0 ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>No one has signed in yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {staff.map((s) => (
+            <Card key={s.userId} style={{ display: "flex", alignItems: "center", gap: 12, opacity: s.active ? 1 : 0.55 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <User size={18} color="#1E3A6D" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
+                    {(s.firstName + " " + s.lastName).trim() || "(no name)"}
+                  </div>
+                  <Pill tone={s.role === "super_admin" ? "accent" : "primary"}>{s.role === "super_admin" ? "Super Admin" : "Admin"}</Pill>
+                  {!s.active && <Pill tone="alert">Deactivated</Pill>}
+                </div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 1 }}>{s.email}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 130 }}>
+                <button disabled={busyId === s.userId || s.userId === currentUserId} onClick={() => toggleRole(s)} style={{ ...smallBtnStyle, opacity: s.userId === currentUserId ? 0.4 : 1 }}>
+                  {s.role === "super_admin" ? "Make Admin" : "Make Super Admin"}
+                </button>
+                <button disabled={busyId === s.userId || s.userId === currentUserId} onClick={() => toggleActive(s)} style={{ ...smallBtnStyle, opacity: s.userId === currentUserId ? 0.4 : 1, color: s.active ? "#C4573F" : "#1E3A6D", borderColor: s.active ? "#F0C9BE" : "#E3E7EE" }}>
+                  {s.active ? "Deactivate" : "Reactivate"}
+                </button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ActivityLogView() {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try { setEntries(await db.fetchActivityLog(150)); } catch (e) { console.error(e); }
+      setLoading(false);
+    })();
+  }, []);
+
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("en-SG", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <SectionLabel>Staff</SectionLabel>
+        <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Activity</h2>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "6px 0 0" }}>Recent changes made by the team, most recent first.</p>
+      </div>
+      {loading ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading activity...</div>
+      ) : entries.length === 0 ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>No activity recorded yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {entries.map((e) => (
+            <Card key={e.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{e.action}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", flexShrink: 0 }}>{formatWhen(e.createdAt)}</div>
+              </div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#64707E" }}>
+                {e.staffName}{e.patientName ? " \u00b7 " + e.patientName : (e.details ? " \u00b7 " + e.details : "")}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
 
 function StaffView({ staffRecord, onLogout }) {
@@ -5177,10 +5421,13 @@ function StaffView({ staffRecord, onLogout }) {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          {[["patients", "Patients"], ["promotions", "Promotions"]].map(([key, label]) => (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {[
+            ["patients", "Patients"], ["promotions", "Promotions"],
+            ...(staffRecord?.role === "super_admin" ? [["staff", "Staff"], ["activity", "Activity"]] : []),
+          ].map(([key, label]) => (
             <button key={key} onClick={() => setSection(key)} style={{
-              flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE",
+              flex: 1, minWidth: 90, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE",
               background: section === key ? "#1E3A6D" : "#FFFFFF", color: section === key ? "#fff" : "#1B2430",
               fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
             }}>
@@ -5250,6 +5497,8 @@ function StaffView({ staffRecord, onLogout }) {
         )}
 
         {section === "promotions" && <PromotionsManager />}
+        {section === "staff" && staffRecord?.role === "super_admin" && <StaffManager currentUserId={staffRecord.userId} />}
+        {section === "activity" && staffRecord?.role === "super_admin" && <ActivityLogView />}
       </div>
 
       {addOpen && <AddPatientModal onClose={() => setAddOpen(false)} onCreated={() => { setAddOpen(false); load(); }} />}
@@ -6576,10 +6825,17 @@ export default function AmazingHearingApp() {
 
   const enterAsUser = async (user) => {
     try {
-      const staff = await db.fetchStaffRecord(user.id);
+      const staff = await db.resolveStaffOrProvision(user);
       if (staff) {
+        if (!staff.active) {
+          await db.signOut();
+          setLoadError("Your staff access has been deactivated. Please contact your administrator.");
+          setPhase("login");
+          return;
+        }
         setStaffRecord(staff);
-        setPhase("staff");
+        db.rememberStaffEmailOnDevice(staff.email);
+        setPhase(staff.pinSet ? "staff" : "staff-setup-pin");
         return;
       }
       const patientRow = await db.resolveMyPatientRecord(user);
@@ -6630,6 +6886,12 @@ export default function AmazingHearingApp() {
     setBundle(null);
     setStaffRecord(null);
     setPhase("login");
+  };
+
+  const handlePinSetupDone = async () => {
+    const fresh = await db.fetchStaffRecord(staffRecord.userId);
+    setStaffRecord(fresh);
+    setPhase("staff");
   };
 
   const refreshBundle = async () => {
@@ -6691,6 +6953,10 @@ export default function AmazingHearingApp() {
         )}
       </div>
     );
+  }
+
+  if (phase === "staff-setup-pin") {
+    return <StaffPinSetup email={staffRecord?.email || ""} onDone={handlePinSetupDone} />;
   }
 
   if (phase === "staff") {

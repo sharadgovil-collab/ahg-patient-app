@@ -1,7 +1,7 @@
 import { supabase } from "./supabaseClient.js";
 
-const ADMIN_LOGIN_EMAIL = "staff-access@amazinghearing.com"; // internal account behind the Admin PIN
-const SUPER_ADMIN_LOGIN_EMAIL = "staff-superadmin@amazinghearing.com"; // internal account behind the Super Admin PIN
+const STAFF_EMAIL_DOMAIN = "@amazinghearing.com";
+const STAFF_DEVICE_EMAIL_KEY = "ahg_staff_device_email";
 
 /* ---------------------------------------------------------
    AUTH
@@ -38,6 +38,7 @@ export async function getCurrentUser() {
 
 export async function signOut() {
   await supabase.auth.signOut();
+  forgetStaffEmail();
 }
 
 export async function fetchStaffRecord(userId) {
@@ -49,25 +50,146 @@ export async function fetchStaffRecord(userId) {
   if (error) return null;
   if (!data) return null;
   return {
-    userId: data.user_id, firstName: data.first_name || "", lastName: data.last_name || "",
+    userId: data.user_id, email: data.email || "", firstName: data.first_name || "", lastName: data.last_name || "",
     clinicName: data.clinic_name || "", role: data.role || "staff",
+    active: data.active !== false, pinSet: !!data.pin_set,
   };
 }
 
-export async function signInStaffWithPin(pin) {
-  // Try Super Admin first, then Admin -- the PIN itself determines which role logs in.
-  const attempt = await supabase.auth.signInWithPassword({
-    email: SUPER_ADMIN_LOGIN_EMAIL,
-    password: pin,
-  });
-  if (!attempt.error) return attempt.data.user;
+/* ---------------------------------------------------------
+   STAFF SIGN-IN -- per-person, tied to a real @amazinghearing.com
+   inbox instead of a shared PIN, so every action is attributable.
 
-  const fallback = await supabase.auth.signInWithPassword({
-    email: ADMIN_LOGIN_EMAIL,
-    password: pin,
-  });
-  if (fallback.error) throw new Error("Incorrect PIN");
-  return fallback.data.user;
+   First-ever sign-in on any device: send the same magic-link email
+   patients already get -> clicking it signs them in -> that
+   auto-provisions their own staff_users row (role starts as "staff";
+   a super_admin promotes from Staff Admin > Staff if needed) -> they
+   choose a personal PIN. From then on, that same device remembers
+   their email so returning is just "type your PIN" (a real Supabase
+   Auth password sign-in under the hood, not a UI-only lock).
+--------------------------------------------------------- */
+export function isStaffEmail(email) {
+  return typeof email === "string" && email.trim().toLowerCase().endsWith(STAFF_EMAIL_DOMAIN);
+}
+
+export function getRememberedStaffEmail() {
+  try { return window.localStorage.getItem(STAFF_DEVICE_EMAIL_KEY) || ""; } catch { return ""; }
+}
+
+export function rememberStaffEmailOnDevice(email) {
+  try { window.localStorage.setItem(STAFF_DEVICE_EMAIL_KEY, email); } catch {}
+}
+
+export function forgetStaffEmail() {
+  try { window.localStorage.removeItem(STAFF_DEVICE_EMAIL_KEY); } catch {}
+}
+
+function capitalizeWord(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+}
+
+export async function sendStaffSignInLink(email) {
+  if (!isStaffEmail(email)) throw new Error("Please use your @amazinghearing.com email address.");
+  await sendEmailOtp(email);
+}
+
+// Called after ANY successful sign-in (magic link OR device PIN). If this person
+// already has a staff_users row, returns it as-is. If not, but their email is on
+// the company domain, self-provisions one on the spot (role starts as "staff").
+// Returns null for a genuine patient sign-in, same as before.
+export async function resolveStaffOrProvision(user) {
+  let staff = await fetchStaffRecord(user.id);
+  if (!staff && isStaffEmail(user.email)) {
+    const localPart = (user.email.split("@")[0] || "").split(/[.\-_0-9]+/).filter(Boolean);
+    const { error } = await supabase.from("staff_users").insert({
+      user_id: user.id,
+      email: user.email,
+      first_name: capitalizeWord(localPart[0] || "New"),
+      last_name: capitalizeWord(localPart.slice(1).join(" ")) || "Staff",
+      clinic_name: "Amazing Hearing",
+      role: "staff",
+    });
+    if (!error) staff = await fetchStaffRecord(user.id);
+  }
+  return staff;
+}
+
+// Sets the account's real Supabase Auth password to the chosen PIN, then flips
+// pin_set so the app knows this person won't need the email step again on this
+// or any other device (the PIN itself now IS how they sign back in).
+export async function setStaffPin(pin) {
+  if (!/^[0-9]{6}$/.test(pin)) throw new Error("Your PIN needs to be exactly 6 digits.");
+  const { error } = await supabase.auth.updateUser({ password: pin });
+  if (error) throw error;
+  const { error: rpcError } = await supabase.rpc("mark_staff_pin_set");
+  if (rpcError) throw rpcError;
+}
+
+// Fast path for a device that already remembers a staff email: sign in with
+// that email + their personal PIN as the password, no email round-trip needed.
+export async function signInStaffWithDevicePin(email, pin) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pin });
+  if (error) throw new Error("Incorrect PIN");
+  return data.user;
+}
+
+/* ---------------------------------------------------------
+   STAFF MANAGEMENT (super_admin only) -- promote/demote,
+   deactivate, and see who's on the team.
+--------------------------------------------------------- */
+export async function fetchAllStaff() {
+  const { data, error } = await supabase
+    .from("staff_users")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    userId: r.user_id, email: r.email || "", firstName: r.first_name || "", lastName: r.last_name || "",
+    role: r.role, active: r.active !== false, pinSet: !!r.pin_set, createdAt: r.created_at,
+  }));
+}
+
+export async function updateStaffRole(userId, role) {
+  const { error } = await supabase.from("staff_users").update({ role }).eq("user_id", userId);
+  if (error) throw error;
+}
+
+export async function setStaffActive(userId, active) {
+  const { error } = await supabase.from("staff_users").update({ active }).eq("user_id", userId);
+  if (error) throw error;
+}
+
+/* ---------------------------------------------------------
+   ACTIVITY LOG -- append-only audit trail. Every entry is tied to
+   whoever is actually signed in right now (auth.uid()), so it can't
+   be spoofed the way a self-reported name could be.
+--------------------------------------------------------- */
+async function logActivity(action, patientId = null, details = null) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const staffUserId = session?.user?.id;
+    if (!staffUserId) return; // not a staff session (e.g. a patient action) -- nothing to log
+    await supabase.from("activity_log").insert({
+      staff_user_id: staffUserId, action, patient_id: patientId, details: details || null,
+    });
+  } catch (e) {
+    console.error("activity log insert failed", e); // never let logging block the real save
+  }
+}
+
+export async function fetchActivityLog(limit = 150) {
+  const { data, error } = await supabase
+    .from("activity_log")
+    .select("id, created_at, action, details, patient_id, staff_users(first_name, last_name, role), patients(first_name, last_name)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data || []).map((r) => ({
+    id: r.id, createdAt: r.created_at, action: r.action, details: r.details,
+    staffName: r.staff_users ? [r.staff_users.first_name, r.staff_users.last_name].filter(Boolean).join(" ") : "Unknown",
+    staffRole: r.staff_users?.role || null,
+    patientName: r.patients ? [r.patients.first_name, r.patients.last_name].filter(Boolean).join(" ") : null,
+  }));
 }
 
 /* ---------------------------------------------------------
@@ -235,6 +357,7 @@ export async function saveQuestionnaireResponse(patientId, questionnaireId, reco
     answers: record.answers,
   });
   if (error) throw error;
+  await logActivity("Backfilled questionnaire", patientId, questionnaireId); // no-ops for patient self-service saves
 }
 
 /* ---------------------------------------------------------
@@ -299,6 +422,7 @@ export async function createPatient({ email, firstName, lastName }) {
     .select()
     .single();
   if (error) throw error;
+  await logActivity("Created patient", data.id, [firstName, lastName].filter(Boolean).join(" ") || email);
   return data;
 }
 
@@ -327,6 +451,7 @@ export async function saveProfileFields(patientId, profile) {
     })
     .eq("id", patientId);
   if (error) throw error;
+  await logActivity("Updated profile", patientId);
 }
 
 /* ---------------------------------------------------------
@@ -356,12 +481,14 @@ export async function createPromotion({ title, filePath, fileType, expiresAt }) 
     title, file_path: filePath, file_type: fileType, expires_at: expiresAt || null,
   });
   if (error) throw error;
+  await logActivity("Created promotion", null, title);
 }
 
 export async function deletePromotion(id, filePath) {
   await supabase.storage.from("promotions").remove([filePath]);
   const { error } = await supabase.from("promotions").delete().eq("id", id);
   if (error) throw error;
+  await logActivity("Deleted promotion", null, null);
 }
 
 /* ---------------------------------------------------------
@@ -392,6 +519,11 @@ export async function getSignedFileUrl(bucket, path, expiresInSeconds = 3600) {
 // Note: this does not remove the person's underlying sign-in account -- if they ever
 // try to log back in, they'll simply start over as a brand-new patient.
 export async function deletePatient(patientId) {
+  let patientLabel = null;
+  try {
+    const { data } = await supabase.from("patients").select("first_name, last_name").eq("id", patientId).maybeSingle();
+    if (data) patientLabel = [data.first_name, data.last_name].filter(Boolean).join(" ") || null;
+  } catch (e) { console.error(e); }
   for (const bucket of ["patient-photos", "patient-documents"]) {
     try {
       const { data: files } = await supabase.storage.from(bucket).list(patientId);
@@ -402,6 +534,7 @@ export async function deletePatient(patientId) {
   }
   const { error } = await supabase.from("patients").delete().eq("id", patientId);
   if (error) throw error;
+  await logActivity("Deleted patient", null, patientLabel);
 }
 
 // Invoicing happens in two steps because the invoice NUMBER (an auto-incrementing
@@ -420,6 +553,7 @@ export async function insertInvoiceRecord({ patientId, orderJson, stripeSessionI
     amount_total: amountTotal, gst_amount: gstAmount, subtotal,
   }).select().single();
   if (error) throw error;
+  await logActivity("Created invoice", patientId, invoice.invoice_number ? ("Invoice #" + invoice.invoice_number) : null);
   return invoice;
 }
 
@@ -451,6 +585,7 @@ export async function insertCreditNote({ patientId, invoiceId, amount, gstAmount
     reason: reason || null, items_json: itemsJson, stripe_refund_id: stripeRefundId || null,
   }).select().single();
   if (error) throw error;
+  await logActivity("Issued refund", patientId, reason || null);
   return note;
 }
 
@@ -539,6 +674,7 @@ export async function saveAudiogramHistory(patientId, history) {
       await supabase.from("audiograms").insert(row);
     }
   }
+  await logActivity("Updated audiogram", patientId);
 }
 
 export async function saveSinResult(patientId, sin) {
@@ -548,6 +684,7 @@ export async function saveSinResult(patientId, sin) {
   } else {
     await supabase.from("sin_results").insert(row);
   }
+  await logActivity("Updated SIN result", patientId);
 }
 
 export async function saveCognitiveResult(patientId, cognitive) {
@@ -557,6 +694,7 @@ export async function saveCognitiveResult(patientId, cognitive) {
   } else {
     await supabase.from("cognitive_results").insert(row);
   }
+  await logActivity("Updated cognitive result", patientId);
 }
 
 export async function saveDevices(patientId, devices) {
@@ -573,6 +711,7 @@ export async function saveDevices(patientId, devices) {
       await supabase.from("devices").insert(row);
     }
   }
+  await logActivity("Updated devices", patientId);
 }
 
 export async function saveAppointments(patientId, appointments) {
@@ -586,6 +725,7 @@ export async function saveAppointments(patientId, appointments) {
       await supabase.from("appointments").insert(row);
     }
   }
+  await logActivity("Updated appointments", patientId);
 }
 
 export async function saveDocuments(patientId, documents) {
@@ -599,6 +739,7 @@ export async function saveDocuments(patientId, documents) {
       await supabase.from("documents").insert(row);
     }
   }
+  await logActivity("Updated documents", patientId);
 }
 
 export async function saveDatalog(patientId, datalog) {
@@ -606,6 +747,7 @@ export async function saveDatalog(patientId, datalog) {
     .from("datalog")
     .upsert({ patient_id: patientId, avg_wear: datalog.avgWear, last_synced: datalog.lastSynced });
   if (error) throw error;
+  await logActivity("Updated datalog", patientId);
 }
 
 function isUuid(val) {
