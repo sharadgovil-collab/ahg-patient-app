@@ -1,7 +1,7 @@
 {
-  "name": "MyHearing",
-  "short_name": "MyHearing",
-  "description": "Your hearing test results, devices, appointments, and care \u2014 all in one place.",
+  "name": "My Amazing Hearing",
+  "short_name": "My Amazing Hearing",
+  "description": "Your hearing test results, devices, appointments, and care — all in one place.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
