@@ -1,7 +1,6 @@
 import { supabase } from "./supabaseClient.js";
 
 const STAFF_EMAIL_DOMAIN = "@amazinghearing.com";
-const STAFF_DEVICE_EMAIL_KEY = "ahg_staff_device_email";
 
 /* ---------------------------------------------------------
    AUTH
@@ -38,7 +37,6 @@ export async function getCurrentUser() {
 
 export async function signOut() {
   await supabase.auth.signOut();
-  forgetStaffEmail();
 }
 
 export async function fetchStaffRecord(userId) {
@@ -52,7 +50,7 @@ export async function fetchStaffRecord(userId) {
   return {
     userId: data.user_id, email: data.email || "", firstName: data.first_name || "", lastName: data.last_name || "",
     clinicName: data.clinic_name || "", role: data.role || "staff",
-    active: data.active !== false, pinSet: !!data.pin_set,
+    active: data.active !== false,
   };
 }
 
@@ -60,28 +58,14 @@ export async function fetchStaffRecord(userId) {
    STAFF SIGN-IN -- per-person, tied to a real @amazinghearing.com
    inbox instead of a shared PIN, so every action is attributable.
 
-   First-ever sign-in on any device: send the same magic-link email
+   Every sign-in, on every device: send the same magic-link email
    patients already get -> clicking it signs them in -> that
-   auto-provisions their own staff_users row (role starts as "staff";
-   a super_admin promotes from Staff Admin > Staff if needed) -> they
-   choose a personal PIN. From then on, that same device remembers
-   their email so returning is just "type your PIN" (a real Supabase
-   Auth password sign-in under the hood, not a UI-only lock).
+   auto-provisions their own staff_users row on first sign-in (role
+   starts as "staff"; a super_admin promotes from Staff Admin > Staff
+   if needed).
 --------------------------------------------------------- */
 export function isStaffEmail(email) {
   return typeof email === "string" && email.trim().toLowerCase().endsWith(STAFF_EMAIL_DOMAIN);
-}
-
-export function getRememberedStaffEmail() {
-  try { return window.localStorage.getItem(STAFF_DEVICE_EMAIL_KEY) || ""; } catch { return ""; }
-}
-
-export function rememberStaffEmailOnDevice(email) {
-  try { window.localStorage.setItem(STAFF_DEVICE_EMAIL_KEY, email); } catch {}
-}
-
-export function forgetStaffEmail() {
-  try { window.localStorage.removeItem(STAFF_DEVICE_EMAIL_KEY); } catch {}
 }
 
 function capitalizeWord(s) {
@@ -93,7 +77,7 @@ export async function sendStaffSignInLink(email) {
   await sendEmailOtp(email);
 }
 
-// Called after ANY successful sign-in (magic link OR device PIN). If this person
+// Called after any successful magic-link sign-in. If this person
 // already has a staff_users row, returns it as-is. If not, but their email is on
 // the company domain, self-provisions one on the spot (role starts as "staff").
 // Returns null for a genuine patient sign-in, same as before.
@@ -114,25 +98,6 @@ export async function resolveStaffOrProvision(user) {
   return staff;
 }
 
-// Sets the account's real Supabase Auth password to the chosen PIN, then flips
-// pin_set so the app knows this person won't need the email step again on this
-// or any other device (the PIN itself now IS how they sign back in).
-export async function setStaffPin(pin) {
-  if (!/^[0-9]{6}$/.test(pin)) throw new Error("Your PIN needs to be exactly 6 digits.");
-  const { error } = await supabase.auth.updateUser({ password: pin });
-  if (error) throw error;
-  const { error: rpcError } = await supabase.rpc("mark_staff_pin_set");
-  if (rpcError) throw rpcError;
-}
-
-// Fast path for a device that already remembers a staff email: sign in with
-// that email + their personal PIN as the password, no email round-trip needed.
-export async function signInStaffWithDevicePin(email, pin) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password: pin });
-  if (error) throw new Error("Incorrect PIN");
-  return data.user;
-}
-
 /* ---------------------------------------------------------
    STAFF MANAGEMENT (super_admin only) -- promote/demote,
    deactivate, and see who's on the team.
@@ -145,7 +110,7 @@ export async function fetchAllStaff() {
   if (error) throw error;
   return (data || []).map((r) => ({
     userId: r.user_id, email: r.email || "", firstName: r.first_name || "", lastName: r.last_name || "",
-    role: r.role, active: r.active !== false, pinSet: !!r.pin_set, createdAt: r.created_at,
+    role: r.role, active: r.active !== false, createdAt: r.created_at,
   }));
 }
 

@@ -5048,14 +5048,12 @@ function AddPatientModal({ onClose, onCreated }) {
   );
 }
 
-// Staff sign-in: a device that already remembers a staff email goes straight to a
-// PIN box (fast, day-to-day path). A new/unrecognized device asks for the company
-// email instead and sends a sign-in link -- same mechanism patients already use.
-function StaffPinGate({ onSuccess, onClose }) {
-  const remembered = db.getRememberedStaffEmail();
-  const [mode, setMode] = useState(remembered ? "pin" : "email"); // email | pin | sent
-  const [email, setEmail] = useState(remembered || "");
-  const [pin, setPin] = useState("");
+// Staff sign-in: enter your @amazinghearing.com email, we send a sign-in link --
+// same mechanism patients already use. Clicking the link signs you straight in
+// (and auto-provisions your staff_users row on your very first sign-in).
+function StaffPinGate({ onClose }) {
+  const [email, setEmail] = useState("");
+  const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -5065,25 +5063,11 @@ function StaffPinGate({ onSuccess, onClose }) {
     setError("");
     try {
       await db.sendStaffSignInLink(email);
-      setMode("sent");
+      setSent(true);
     } catch (e) {
       setError(e.message || "Couldn't send the link -- try again");
     }
     setBusy(false);
-  };
-
-  const submitPin = async () => {
-    if (!pin || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const user = await db.signInStaffWithDevicePin(email, pin);
-      await onSuccess(user);
-    } catch (e) {
-      setError("Incorrect PIN");
-      setPin("");
-      setBusy(false);
-    }
   };
 
   return (
@@ -5094,35 +5078,9 @@ function StaffPinGate({ onSuccess, onClose }) {
         </div>
         <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", margin: "0 0 4px" }}>Staff access</h3>
 
-        {mode === "pin" && (
+        {!sent ? (
           <>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 4px" }}>{email}</p>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter your personal PIN.</p>
-            <input
-              type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setError(""); }}
-              onKeyDown={(e) => e.key === "Enter" && submitPin()}
-              style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 8, borderColor: error ? "#C4573F" : "#E3E7EE" }}
-              placeholder="******" autoFocus disabled={busy} maxLength={6}
-            />
-            {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{error}</div>}
-            <div
-              onClick={() => { db.forgetStaffEmail(); setMode("email"); setEmail(""); setPin(""); setError(""); }}
-              style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", cursor: "pointer", marginBottom: 12 }}
-            >
-              Not you? Sign in with a different email
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={onClose} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Cancel</button>
-              <button onClick={submitPin} disabled={busy} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "none", background: "#1E3A6D", color: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-                {busy ? "Checking..." : "Enter"}
-              </button>
-            </div>
-          </>
-        )}
-
-        {mode === "email" && (
-          <>
-            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>New device -- enter your @amazinghearing.com email and we'll send you a sign-in link.</p>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 16px" }}>Enter your @amazinghearing.com email and we'll send you a sign-in link.</p>
             <input
               type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(""); }}
               onKeyDown={(e) => e.key === "Enter" && sendLink()}
@@ -5137,9 +5095,7 @@ function StaffPinGate({ onSuccess, onClose }) {
               </button>
             </div>
           </>
-        )}
-
-        {mode === "sent" && (
+        ) : (
           <>
             <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", margin: "0 0 16px", lineHeight: 1.6 }}>
               {"We've sent a sign-in link to " + email + ". Open it on this device to continue."}
@@ -5147,63 +5103,6 @@ function StaffPinGate({ onSuccess, onClose }) {
             <button onClick={onClose} style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE", background: "#fff", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, cursor: "pointer", color: "#64707E" }}>Close</button>
           </>
         )}
-      </div>
-    </div>
-  );
-}
-
-// Shown once, right after a staff member's very first sign-in, so they can choose
-// the personal PIN they'll use on this and future devices from now on.
-function StaffPinSetup({ email, onDone }) {
-  const [pin, setPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const submit = async () => {
-    if (busy) return;
-    if (!/^[0-9]{6}$/.test(pin)) { setError("Choose a 6-digit PIN"); return; }
-    if (pin !== confirmPin) { setError("PINs don't match"); return; }
-    setBusy(true);
-    setError("");
-    try {
-      await db.setStaffPin(pin);
-      db.rememberStaffEmailOnDevice(email);
-      onDone();
-    } catch (e) {
-      setError(e.message || "Couldn't set your PIN -- try again");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 340, width: "100%", textAlign: "center" }}>
-        <div style={{ width: 48, height: 48, borderRadius: "50%", background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-          <KeyRound size={20} color="#1E3A6D" />
-        </div>
-        <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", margin: "0 0 4px" }}>Choose your PIN</h3>
-        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "0 0 18px", lineHeight: 1.6 }}>
-          You're signed in as {email}. Set a personal 6-digit PIN -- you'll use it to sign back in on this and future devices.
-        </p>
-        <input
-          type="password" inputMode="numeric" value={pin} onChange={(e) => { setPin(e.target.value); setError(""); }}
-          style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 10 }}
-          placeholder="New PIN" autoFocus disabled={busy} maxLength={6}
-        />
-        <input
-          type="password" inputMode="numeric" value={confirmPin} onChange={(e) => { setConfirmPin(e.target.value); setError(""); }}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          style={{ ...inputStyle, textAlign: "center", letterSpacing: "0.3em", fontSize: 18, marginBottom: 8 }}
-          placeholder="Confirm PIN" disabled={busy} maxLength={6}
-        />
-        {error && <div style={{ color: "#C4573F", fontSize: 11.5, fontFamily: "'Inter', sans-serif", marginBottom: 8 }}>{error}</div>}
-        <button onClick={submit} disabled={busy} style={{
-          width: "100%", padding: "12px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff", border: "none",
-          fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.7 : 1, marginTop: 4,
-        }}>
-          {busy ? "Saving..." : "Save PIN"}
-        </button>
       </div>
     </div>
   );
@@ -6834,8 +6733,7 @@ export default function AmazingHearingApp() {
           return;
         }
         setStaffRecord(staff);
-        db.rememberStaffEmailOnDevice(staff.email);
-        setPhase(staff.pinSet ? "staff" : "staff-setup-pin");
+        setPhase("staff");
         return;
       }
       const patientRow = await db.resolveMyPatientRecord(user);
@@ -6862,11 +6760,6 @@ export default function AmazingHearingApp() {
     setPhase("app");
   };
 
-  const handleStaffPinSuccess = async (user) => {
-    setPinGateOpen(false);
-    await enterAsUser(user);
-  };
-
   const handleSplashDone = async () => {
     const user = await db.getCurrentUser();
     if (user) {
@@ -6886,12 +6779,6 @@ export default function AmazingHearingApp() {
     setBundle(null);
     setStaffRecord(null);
     setPhase("login");
-  };
-
-  const handlePinSetupDone = async () => {
-    const fresh = await db.fetchStaffRecord(staffRecord.userId);
-    setStaffRecord(fresh);
-    setPhase("staff");
   };
 
   const refreshBundle = async () => {
@@ -6945,7 +6832,7 @@ export default function AmazingHearingApp() {
         >
           <Settings size={13} /> Staff access
         </button>
-        {pinGateOpen && <StaffPinGate onSuccess={handleStaffPinSuccess} onClose={() => setPinGateOpen(false)} />}
+        {pinGateOpen && <StaffPinGate onClose={() => setPinGateOpen(false)} />}
         {loadError && (
           <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#F5DED8", color: "#A8452F", padding: "10px 16px", borderRadius: 10, fontFamily: "'Inter', sans-serif", fontSize: 12.5 }}>
             {loadError}
@@ -6953,10 +6840,6 @@ export default function AmazingHearingApp() {
         )}
       </div>
     );
-  }
-
-  if (phase === "staff-setup-pin") {
-    return <StaffPinSetup email={staffRecord?.email || ""} onDone={handlePinSetupDone} />;
   }
 
   if (phase === "staff") {
