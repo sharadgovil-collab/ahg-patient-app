@@ -958,11 +958,15 @@ function useQuestionnaireStore(patientId) {
     })();
   }, [patientId]);
 
+  // Writes to the database FIRST, and only updates local state (and lets the
+  // caller close the modal) once that's confirmed -- previously this updated
+  // local state immediately and swallowed any save error, so a patient could
+  // see "completed" and walk away while the answers never actually reached
+  // the database. Throws on failure so QuestionnaireRunner can show a
+  // retryable error instead of silently losing the response.
   const save = async (id, record) => {
+    await db.saveQuestionnaireResponse(patientId, id, record);
     setSaved((prev) => ({ ...prev, [id]: { current: record, previous: prev[id]?.current || null } }));
-    try {
-      await db.saveQuestionnaireResponse(patientId, id, record);
-    } catch (e) { console.error("save failed", e); }
   };
 
   return { saved, save };
@@ -1022,7 +1026,25 @@ function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = fa
   const [values, setValues] = useState({});
   const [textDraft, setTextDraft] = useState("");
   const [result, setResult] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const current = questions[idx];
+
+  // Every onSave implementation is expected to await the actual database
+  // write and throw on failure. Centralizing the busy/error UI here means a
+  // dropped connection or a failed insert always surfaces to the patient
+  // with a retry option, instead of the modal quietly closing while their
+  // answers never made it to the database.
+  const handleDone = async () => {
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSave(result);
+    } catch (e) {
+      setSaveError(e?.message || "Couldn't save your answers -- please check your connection and try again.");
+      setSaving(false);
+    }
+  };
 
   const startRetake = () => {
     setIdx(0);
@@ -1108,11 +1130,20 @@ function QuestionnaireRunner({ q, existingResult, onClose, onSave, readOnly = fa
             </div>
           </Card>
         )}
-        <button onClick={() => onSave(result)} style={{
+        {saveError && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10,
+            background: "#F5DED8", color: "#A8452F", fontFamily: "'Inter', sans-serif", fontSize: 12, marginBottom: 12,
+          }}>
+            {saveError}
+          </div>
+        )}
+        <button onClick={handleDone} disabled={saving} style={{
           width: "100%", padding: "13px 0", borderRadius: 12, background: "#1E3A6D", color: "#fff",
-          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          border: "none", fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14,
+          cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1,
         }}>
-          Done
+          {saving ? "Saving..." : saveError ? "Try again" : "Done"}
         </button>
       </ModalShell>
     );
@@ -1444,7 +1475,7 @@ function ResultsTab({ audiogramHistory, sin, patientId, patientName = "", readOn
               existingResult={active.existingResult}
               readOnly={readOnly}
               onClose={() => setActive(null)}
-              onSave={(record) => { save(active.q.id, record); setActive(null); }}
+              onSave={async (record) => { await save(active.q.id, record); setActive(null); }}
             />
           )}
         </div>
@@ -2589,6 +2620,90 @@ function UploadDocumentModal({ patientId, onClose, onUploaded }) {
   );
 }
 
+/* ---------------------------------------------------------
+   ADD APPOINTMENT TO CALENDAR -- staff enters the time as free text (e.g.
+   "10:00 AM", "14:30"), so this parses the common formats a clinic would
+   actually type. Falls back to a sensible default rather than failing
+   outright, since a slightly-off time is far less harmful than the button
+   silently doing nothing.
+--------------------------------------------------------- */
+function parseApptTime(raw) {
+  const t = String(raw || "").trim();
+  const m = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm|AM|PM)?$/);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = m[2] ? Number(m[2]) : 0;
+  const meridiem = m[3] ? m[3].toLowerCase() : null;
+  if (hour > 23 || minute > 59) return null;
+  if (meridiem === "pm" && hour < 12) hour += 12;
+  if (meridiem === "am" && hour === 12) hour = 0;
+  return { hour, minute };
+}
+
+// Singapore has no daylight saving and sits at a fixed UTC+8, so converting
+// to UTC for the .ics/Google Calendar link is just a flat 8-hour subtraction
+// -- no VTIMEZONE block needed for a correct, portable single event.
+function apptToUtcRange(appt, durationMinutes = 60) {
+  const dateMatch = String(appt.date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!dateMatch) return null;
+  const parsedTime = parseApptTime(appt.time) || { hour: 9, minute: 0 };
+  const [, y, mo, d] = dateMatch;
+  const localMs = Date.UTC(Number(y), Number(mo) - 1, Number(d), parsedTime.hour, parsedTime.minute) - 8 * 3600 * 1000;
+  const start = new Date(localMs);
+  const end = new Date(localMs + durationMinutes * 60 * 1000);
+  return { start, end };
+}
+
+function toIcsUtc(d) {
+  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
+function buildAppointmentIcs(appt) {
+  const range = apptToUtcRange(appt);
+  const title = (appt.type || "Appointment") + " -- Amazing Hearing";
+  const location = [appt.clinic, appt.consultant].filter(Boolean).join(", ");
+  const description = "Amazing Hearing appointment" + (appt.consultant ? " with " + appt.consultant : "") + (appt.type ? " (" + appt.type + ")" : "") + ".";
+  const uid = (appt.id || Math.random().toString(36).slice(2)) + "@amazinghearing.com";
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Amazing Hearing//Patient App//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    "UID:" + uid,
+    "DTSTAMP:" + toIcsUtc(new Date()),
+    range ? "DTSTART:" + toIcsUtc(range.start) : null,
+    range ? "DTEND:" + toIcsUtc(range.end) : null,
+    "SUMMARY:" + title,
+    location ? "LOCATION:" + location : null,
+    "DESCRIPTION:" + description,
+    "END:VEVENT", "END:VCALENDAR",
+  ].filter(Boolean);
+  return lines.join("\r\n");
+}
+
+function downloadAppointmentIcs(appt) {
+  const ics = buildAppointmentIcs(appt);
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "Appointment_" + (appt.date || "").replace(/[^0-9]/g, "") + ".ics";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildGoogleCalendarLink(appt) {
+  const range = apptToUtcRange(appt);
+  const title = (appt.type || "Appointment") + " -- Amazing Hearing";
+  const location = [appt.clinic, appt.consultant].filter(Boolean).join(", ");
+  const description = "Amazing Hearing appointment" + (appt.consultant ? " with " + appt.consultant : "") + (appt.type ? " (" + appt.type + ")" : "") + ".";
+  const params = new URLSearchParams({
+    action: "TEMPLATE", text: title, details: description, location,
+  });
+  if (range) params.set("dates", toIcsUtc(range.start) + "/" + toIcsUtc(range.end));
+  return "https://calendar.google.com/calendar/render?" + params.toString();
+}
+
 function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, cart, setCart, readOnly = false }) {
   const [openGuide, setOpenGuide] = useState(null);
   const [docCategory, setDocCategory] = useState("All");
@@ -2649,19 +2764,39 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
         <SectionLabel>Appointments</SectionLabel>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {appointments.map((a) => (
-            <Card key={a.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-                background: a.status === "upcoming" ? "#FCE4D2" : "#F0EFEA",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <Calendar size={16} color={a.status === "upcoming" ? "#A8451B" : "#8A96A3"} />
+            <Card key={a.id} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+                  background: a.status === "upcoming" ? "#FCE4D2" : "#F0EFEA",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <Calendar size={16} color={a.status === "upcoming" ? "#A8451B" : "#8A96A3"} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{a.type}</div>
+                  <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 2 }}>{formatDateDMY(a.date) + " . " + a.time}</div>
+                </div>
+                {a.status === "upcoming" && <Pill tone="accent">Upcoming</Pill>}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{a.type}</div>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 2 }}>{formatDateDMY(a.date) + " . " + a.time}</div>
-              </div>
-              {a.status === "upcoming" && <Pill tone="accent">Upcoming</Pill>}
+              {a.status === "upcoming" && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => downloadAppointmentIcs(a)} style={{
+                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    padding: "8px 0", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff",
+                    color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, cursor: "pointer",
+                  }}>
+                    <Download size={12} /> Add to calendar
+                  </button>
+                  <a href={buildGoogleCalendarLink(a)} target="_blank" rel="noreferrer" style={{
+                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                    padding: "8px 0", borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff",
+                    color: "#1E3A6D", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 11.5, textDecoration: "none",
+                  }}>
+                    <Calendar size={12} /> Google Calendar
+                  </a>
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -3609,15 +3744,8 @@ function BackfillQuestionnaireModal({ patientId, onClose, onSaved }) {
   const q = options.find((x) => x.id === qId);
 
   const handleSave = async (result) => {
-    setSaving(true);
-    setError("");
-    try {
-      await db.saveQuestionnaireResponse(patientId, qId, result);
-      onSaved();
-    } catch (e) {
-      setError(e.message || "Couldn't save that result.");
-      setSaving(false);
-    }
+    await db.saveQuestionnaireResponse(patientId, qId, result);
+    onSaved();
   };
 
   if (started && q) {
@@ -6150,7 +6278,7 @@ function IntakeForm({ email, patientId, onFinish }) {
           q={hhieQ}
           onClose={onFinish}
           onSave={async (record) => {
-            try { await db.saveQuestionnaireResponse(patientId, "hhie", record); } catch (e) { console.error(e); }
+            await db.saveQuestionnaireResponse(patientId, "hhie", record);
             onFinish();
           }}
         />
