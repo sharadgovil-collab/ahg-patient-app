@@ -1,0 +1,15 @@
+{
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "ahg-patient-app.vercel.app"
+        }
+      ],
+      "destination": "https://myamazinghearing.com/:path*",
+      "permanent": true
+    }
+  ]
+}
