@@ -589,6 +589,63 @@ export async function refundViaStripe(sessionId, amount, reason) {
   return data;
 }
 
+/* ---------------------------------------------------------
+   SALES REPORT (super_admin) -- gross sales, refunds, and net
+   for a given date range, plus a best-sellers breakdown. Sales and
+   refunds are both counted on the day the transaction itself
+   happened (invoice created_at / credit note created_at) -- NOT
+   the date of the original invoice a refund applies to -- so the
+   numbers for "today" always match what actually moved today.
+--------------------------------------------------------- */
+export async function fetchSalesReport({ startIso, endIso }) {
+  const [invRes, cnRes] = await Promise.all([
+    supabase.from("invoices")
+      .select("id, invoice_number, patient_id, amount_total, gst_amount, subtotal, order_json, created_at, patients(first_name,last_name)")
+      .gte("created_at", startIso).lt("created_at", endIso)
+      .order("created_at", { ascending: false }),
+    supabase.from("credit_notes")
+      .select("id, credit_note_number, patient_id, amount, reason, created_at, patients(first_name,last_name)")
+      .gte("created_at", startIso).lt("created_at", endIso)
+      .order("created_at", { ascending: false }),
+  ]);
+  if (invRes.error) throw invRes.error;
+  if (cnRes.error) throw cnRes.error;
+
+  const invoices = (invRes.data || []).map((r) => ({
+    id: r.id, invoiceNumber: r.invoice_number, patientId: r.patient_id,
+    patientName: r.patients ? [r.patients.first_name, r.patients.last_name].filter(Boolean).join(" ").trim() : "",
+    amountTotal: Number(r.amount_total) || 0, gstAmount: Number(r.gst_amount) || 0, subtotal: Number(r.subtotal) || 0,
+    items: (r.order_json && r.order_json.items) || [], createdAt: r.created_at,
+  }));
+  const refunds = (cnRes.data || []).map((r) => ({
+    id: r.id, creditNoteNumber: r.credit_note_number, patientId: r.patient_id,
+    patientName: r.patients ? [r.patients.first_name, r.patients.last_name].filter(Boolean).join(" ").trim() : "",
+    amount: Number(r.amount) || 0, reason: r.reason || "", createdAt: r.created_at,
+  }));
+
+  const grossSales = invoices.reduce((s, i) => s + i.amountTotal, 0);
+  const gstCollected = invoices.reduce((s, i) => s + i.gstAmount, 0);
+  const totalRefunds = refunds.reduce((s, r) => s + r.amount, 0);
+
+  const productMap = new Map();
+  invoices.forEach((inv) => {
+    inv.items.forEach((it) => {
+      const key = it.name || "Unknown item";
+      const existing = productMap.get(key) || { name: key, qty: 0, revenue: 0 };
+      existing.qty += Number(it.qty) || 0;
+      existing.revenue += (Number(it.price) || 0) * (Number(it.qty) || 0);
+      productMap.set(key, existing);
+    });
+  });
+  const products = [...productMap.values()].sort((a, b) => b.revenue - a.revenue);
+
+  return {
+    invoices, refunds, products,
+    orderCount: invoices.length, refundCount: refunds.length,
+    grossSales, gstCollected, totalRefunds, netSales: grossSales - totalRefunds,
+  };
+}
+
 export async function savePhotoUrl(patientId, photoPath) {
   const { error } = await supabase
     .from("patients")

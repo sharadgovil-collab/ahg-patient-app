@@ -5203,6 +5203,190 @@ function StaffManager({ currentUserId }) {
   );
 }
 
+function money(n) {
+  return "S$" + (Number(n) || 0).toFixed(2);
+}
+
+function parseIsoDateLocal(iso) {
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const now = new Date();
+  if (!m) return now;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function isoDateLocal(d) {
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+}
+
+function SalesReport() {
+  const [rangeMode, setRangeMode] = useState("today"); // today | mtd | custom
+  const [customDate, setCustomDate] = useState(() => isoDateLocal(new Date()));
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const now = new Date();
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  const todayStart = startOfDay(now);
+  const todayEnd = new Date(todayStart.getTime() + 86400000);
+
+  let rangeStart, rangeEnd, rangeLabel;
+  if (rangeMode === "mtd") {
+    rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    rangeEnd = todayEnd;
+    rangeLabel = MONTH_NAMES[now.getMonth()] + " " + now.getFullYear() + " so far";
+  } else if (rangeMode === "custom") {
+    const base = parseIsoDateLocal(customDate);
+    rangeStart = startOfDay(base);
+    rangeEnd = new Date(rangeStart.getTime() + 86400000);
+    rangeLabel = formatDateDMY(customDate);
+  } else {
+    rangeStart = todayStart;
+    rangeEnd = todayEnd;
+    rangeLabel = "Today, " + formatDateDMY(isoDateLocal(now));
+  }
+  const startIso = rangeStart.toISOString();
+  const endIso = rangeEnd.toISOString();
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      try {
+        const r = await db.fetchSalesReport({ startIso, endIso });
+        if (!cancelled) setReport(r);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setReport(null);
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [startIso, endIso]);
+
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString("en-SG", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  };
+
+  const modeBtnStyle = (active) => ({
+    flex: 1, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE",
+    background: active ? "#1E3A6D" : "#FFFFFF", color: active ? "#fff" : "#1B2430",
+    fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12.5, cursor: "pointer",
+  });
+
+  const statCard = (label, value, tone) => (
+    <div style={{ flex: "1 1 130px", background: "#FFFFFF", border: "1px solid #E3E7EE", borderRadius: 14, padding: "14px 16px" }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "#8A96A3", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 19, fontWeight: 700, color: tone || "#1B2430" }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <>
+      <div style={{ marginBottom: 16 }}>
+        <SectionLabel>Staff</SectionLabel>
+        <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Sales Report</h2>
+        <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "6px 0 0" }}>{rangeLabel}</p>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button onClick={() => setRangeMode("today")} style={modeBtnStyle(rangeMode === "today")}>Today</button>
+        <button onClick={() => setRangeMode("mtd")} style={modeBtnStyle(rangeMode === "mtd")}>Month to date</button>
+        <button onClick={() => setRangeMode("custom")} style={modeBtnStyle(rangeMode === "custom")}>Pick a day</button>
+      </div>
+
+      {rangeMode === "custom" && (
+        <div style={{ maxWidth: 220, marginBottom: 16 }}>
+          <DatePickerField value={customDate} onChange={setCustomDate} maxYear={now.getFullYear()} minYear={now.getFullYear() - 5} />
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Loading sales...</div>
+      ) : !report ? (
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", textAlign: "center", padding: 40 }}>Couldn't load the sales report -- try again.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
+            {statCard("Gross sales", money(report.grossSales))}
+            {statCard("Refunds", money(report.totalRefunds), report.totalRefunds > 0 ? "#C4573F" : undefined)}
+            {statCard("Net sales", money(report.netSales), "#4C6349")}
+            {statCard("Orders", String(report.orderCount))}
+          </div>
+          <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: -12, marginBottom: 20 }}>
+            {"Includes " + money(report.gstCollected) + " GST collected" + (report.refundCount > 0 ? " \u00b7 " + report.refundCount + " refund" + (report.refundCount === 1 ? "" : "s") : "")}
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430", marginBottom: 8 }}>Best sellers</div>
+            {report.products.length === 0 ? (
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3" }}>No sales in this period.</div>
+            ) : (
+              <Card style={{ padding: 0, overflow: "hidden" }}>
+                {report.products.map((p, i) => (
+                  <div key={p.name} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px",
+                    borderTop: i === 0 ? "none" : "1px solid #F0F2F5",
+                  }}>
+                    <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#1B2430" }}>{p.name}</div>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3" }}>{"x" + p.qty}</span>
+                      <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12.5, fontWeight: 600, color: "#1B2430" }}>{money(p.revenue)}</span>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430", marginBottom: 8 }}>Orders</div>
+            {report.invoices.length === 0 ? (
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#8A96A3" }}>No orders in this period.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {report.invoices.map((inv) => (
+                  <Card key={inv.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
+                    <div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430" }}>
+                        {(inv.invoiceNumber ? "Invoice #" + inv.invoiceNumber : "Order") + (inv.patientName ? " \u00b7 " + inv.patientName : "")}
+                      </div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 2 }}>{formatWhen(inv.createdAt)}</div>
+                    </div>
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 700, color: "#1B2430" }}>{money(inv.amountTotal)}</div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {report.refunds.length > 0 && (
+            <div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430", marginBottom: 8 }}>Refunds</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {report.refunds.map((r) => (
+                  <Card key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
+                    <div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430" }}>
+                        {(r.creditNoteNumber ? "Credit note #" + r.creditNoteNumber : "Refund") + (r.patientName ? " \u00b7 " + r.patientName : "")}
+                      </div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11.5, color: "#8A96A3", marginTop: 2 }}>
+                        {formatWhen(r.createdAt) + (r.reason ? " \u00b7 " + r.reason : "")}
+                      </div>
+                    </div>
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 700, color: "#C4573F" }}>{"-" + money(r.amount)}</div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 function ActivityLogView() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5323,7 +5507,7 @@ function StaffView({ staffRecord, onLogout }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           {[
             ["patients", "Patients"], ["promotions", "Promotions"],
-            ...(staffRecord?.role === "super_admin" ? [["staff", "Staff"], ["activity", "Activity"]] : []),
+            ...(staffRecord?.role === "super_admin" ? [["sales", "Sales"], ["staff", "Staff"], ["activity", "Activity"]] : []),
           ].map(([key, label]) => (
             <button key={key} onClick={() => setSection(key)} style={{
               flex: 1, minWidth: 90, padding: "10px 0", borderRadius: 10, border: "1px solid #E3E7EE",
@@ -5396,6 +5580,7 @@ function StaffView({ staffRecord, onLogout }) {
         )}
 
         {section === "promotions" && <PromotionsManager />}
+        {section === "sales" && staffRecord?.role === "super_admin" && <SalesReport />}
         {section === "staff" && staffRecord?.role === "super_admin" && <StaffManager currentUserId={staffRecord.userId} />}
         {section === "activity" && staffRecord?.role === "super_admin" && <ActivityLogView />}
       </div>
