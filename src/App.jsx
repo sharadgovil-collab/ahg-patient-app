@@ -5113,7 +5113,7 @@ function StaffManager({ currentUserId }) {
         <SectionLabel>Staff</SectionLabel>
         <h2 style={{ fontFamily: "'Fraunces', serif", fontWeight: 500, fontSize: 26, color: "#1B2430", margin: 0 }}>Team access</h2>
         <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E", margin: "6px 0 0", lineHeight: 1.5 }}>
-          Anyone who signs in with an @amazinghearing.com email gets Admin access automatically. Promote someone to Super Admin here, or deactivate access for anyone who's left.
+          Anyone who signs in with an @amazinghearing.com email gets Staff access automatically. Promote someone to Super Admin here, or deactivate access for anyone who's left.
         </p>
       </div>
       {loading ? (
@@ -5132,14 +5132,14 @@ function StaffManager({ currentUserId }) {
                   <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 14, color: "#1B2430" }}>
                     {(s.firstName + " " + s.lastName).trim() || "(no name)"}
                   </div>
-                  <Pill tone={s.role === "super_admin" ? "accent" : "primary"}>{s.role === "super_admin" ? "Super Admin" : "Admin"}</Pill>
+                  <Pill tone={s.role === "super_admin" ? "accent" : "primary"}>{s.role === "super_admin" ? "Super Admin" : "Staff"}</Pill>
                   {!s.active && <Pill tone="alert">Deactivated</Pill>}
                 </div>
                 <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginTop: 1 }}>{s.email}</div>
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 130 }}>
                 <button disabled={busyId === s.userId || s.userId === currentUserId} onClick={() => toggleRole(s)} style={{ ...smallBtnStyle, opacity: s.userId === currentUserId ? 0.4 : 1 }}>
-                  {s.role === "super_admin" ? "Make Admin" : "Make Super Admin"}
+                  {s.role === "super_admin" ? "Make Staff" : "Make Super Admin"}
                 </button>
                 <button disabled={busyId === s.userId || s.userId === currentUserId} onClick={() => toggleActive(s)} style={{ ...smallBtnStyle, opacity: s.userId === currentUserId ? 0.4 : 1, color: s.active ? "#C4573F" : "#1E3A6D", borderColor: s.active ? "#F0C9BE" : "#E3E7EE" }}>
                   {s.active ? "Deactivate" : "Reactivate"}
@@ -5450,7 +5450,7 @@ function StaffView({ staffRecord, onLogout }) {
         {staffRecord && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E" }}>
             <span>{staffRecord.firstName + " " + staffRecord.lastName + " . " + staffRecord.clinicName}</span>
-            <Pill tone={staffRecord.role === "super_admin" ? "accent" : "primary"}>{staffRecord.role === "super_admin" ? "Super Admin" : "Admin"}</Pill>
+            <Pill tone={staffRecord.role === "super_admin" ? "accent" : "primary"}>{staffRecord.role === "super_admin" ? "Super Admin" : "Staff"}</Pill>
           </div>
         )}
 
