@@ -445,17 +445,16 @@ const PRODUCTS = [
 
 // Top-level Shop groups -- keeps the filter row short; tapping a group with more
 // than one sub-category reveals a second row to narrow further.
-// "Services" (teleconsults, in-clinic assessments, etc.) deliberately live in
-// the Care tab's "Book a service" section instead of here -- patients look for
-// booking a consultation alongside appointments, not in a parts/accessories shop.
+// "Services" (teleconsults, in-clinic assessments, etc.) is its own top-level
+// group here in the Shop, separate from parts/accessories/brands.
 const SHOP_GROUPS = [
+  { label: "Services", categories: ["Services"] },
   { label: "Accessories", categories: ["Custom Earplug", "Cleaning", "Consumables"] },
   { label: "Batteries & Charger", categories: ["Implant Battery", "Battery", "Charger"] },
   { label: "Hearing Aid Brands", categories: ["Oticon", "Phonak", "ReSound", "Signia"] },
 ];
 
-const SERVICE_PRODUCTS = PRODUCTS.filter((p) => p.category === "Services");
-const SHOP_PRODUCTS = PRODUCTS.filter((p) => p.category !== "Services");
+const SHOP_PRODUCTS = PRODUCTS;
 
 // Cognitive screening and auditory training can also be added to the shared cart
 // (in addition to their own dedicated "Learn more" purchase flow).
@@ -2160,7 +2159,7 @@ function ShopTab({ cart, setCart, onOpenCheckout }) {
         {shown.map((p) => (
           <Card key={p.id} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
             <div style={{ width: 46, height: 46, borderRadius: 12, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <ShoppingBag size={19} color="#1E3A6D" />
+              {p.category === "Services" ? <Stethoscope size={19} color="#1E3A6D" /> : <ShoppingBag size={19} color="#1E3A6D" />}
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13.5, color: "#1B2430" }}>{p.name}</div>
@@ -2704,12 +2703,11 @@ function buildGoogleCalendarLink(appt) {
   return "https://calendar.google.com/calendar/render?" + params.toString();
 }
 
-function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, cart, setCart, readOnly = false }) {
+function CareTab({ profile, appointments, documents, patientId, onDocumentsChanged, readOnly = false }) {
   const [openGuide, setOpenGuide] = useState(null);
   const [docCategory, setDocCategory] = useState("All");
   const [apptOpen, setApptOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [showAllServices, setShowAllServices] = useState(false);
   const waLink = "https://wa.me/" + MAINLINE_WHATSAPP;
   const docCategories = ["All", "Reports", "Invoices", "My Uploads"];
   const shownDocs = docCategory === "All" ? documents : documents.filter((d) => d.category === docCategory);
@@ -2807,54 +2805,6 @@ function CareTab({ profile, appointments, documents, patientId, onDocumentsChang
         }}>
           + Request new appointment
         </button>
-      </div>
-
-      <div>
-        <SectionLabel>Book a service</SectionLabel>
-        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, color: "#8A96A3", marginBottom: 10, lineHeight: 1.5 }}>
-          Teleconsultations and in-clinic services. Add one to your cart to pay online, or message us on WhatsApp to arrange it directly.
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {(showAllServices ? SERVICE_PRODUCTS : SERVICE_PRODUCTS.slice(0, 4)).map((p) => (
-            <Card key={p.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 38, height: 38, borderRadius: 10, background: "#E7ECF3", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Stethoscope size={16} color="#1E3A6D" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 13, color: "#1B2430" }}>{p.name}</div>
-                <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, color: "#64707E", marginTop: 2 }}>{"S$" + p.price.toFixed(2)}</div>
-              </div>
-              {!readOnly && (
-                cart && cart[p.id] ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                    <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: Math.max(0, prev[p.id] - 1) }))} style={{ width: 26, height: 26, borderRadius: 8, border: "1px solid #E3E7EE", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <Minus size={12} color="#1B2430" />
-                    </button>
-                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600, minWidth: 14, textAlign: "center" }}>{cart[p.id]}</span>
-                    <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))} style={{ width: 26, height: 26, borderRadius: 8, border: "none", background: "#1E3A6D", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                      <Plus size={12} color="#fff" />
-                    </button>
-                  </div>
-                ) : (
-                  <button onClick={() => setCart((prev) => ({ ...prev, [p.id]: (prev[p.id] || 0) + 1 }))} style={{
-                    flexShrink: 0, padding: "6px 14px", borderRadius: 999, background: "#1E3A6D", color: "#fff", border: "none",
-                    fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12, cursor: "pointer",
-                  }}>
-                    Add
-                  </button>
-                )
-              )}
-            </Card>
-          ))}
-        </div>
-        {SERVICE_PRODUCTS.length > 4 && (
-          <div onClick={() => setShowAllServices((v) => !v)} style={{
-            marginTop: 8, textAlign: "center", fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 12,
-            color: "#1E3A6D", cursor: "pointer",
-          }}>
-            {showAllServices ? "Show fewer services" : "Show all " + SERVICE_PRODUCTS.length + " services"}
-          </div>
-        )}
       </div>
 
       <div>
@@ -3201,7 +3151,7 @@ function PatientPreviewShell({ bundle, patientId, patientName, onExit }) {
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={blockCheckout} />}
-          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={() => {}} cart={cart} setCart={setCart} readOnly />}
+          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={() => {}} readOnly />}
           {tab === "forms" && <ProfileTab profile={profile} patientId={patientId} onLogout={onExit} onProfileUpdated={() => {}} onEditProfile={() => {}} readOnly />}
         </div>
 
@@ -7080,7 +7030,7 @@ export default function AmazingHearingApp() {
           {tab === "device" && <DeviceTab devices={devices} datalog={datalog} profile={profile} />}
           {tab === "train" && <TrainTab cognitive={bundle.cognitive} cart={cart} setCart={setCart} />}
           {tab === "shop" && <ShopTab cart={cart} setCart={setCart} onOpenCheckout={() => setCheckoutOpen(true)} />}
-          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={refreshBundle} cart={cart} setCart={setCart} />}
+          {tab === "care" && <CareTab profile={profile} appointments={appointments} documents={documents} patientId={patientId} onDocumentsChanged={refreshBundle} />}
           {tab === "forms" && <ProfileTab profile={profile} patientId={patientId} onLogout={handleLogout} onProfileUpdated={refreshBundle} onEditProfile={() => setEditProfileOpen(true)} />}
         </div>
 
