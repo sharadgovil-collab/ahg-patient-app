@@ -4847,10 +4847,78 @@ function SplashScreen({ onDone }) {
   );
 }
 
-function OtpLogin({ onLogin }) {
+/* ---------------------------------------------------------
+   AUTH CONFIRM -- lands here from our own sign-in link
+   (myamazinghearing.com/?token_hash=...&type=...) instead of the
+   raw Supabase domain, and verifies client-side. Real browsers only:
+   nothing here fires just from a mail scanner prefetching the URL.
+--------------------------------------------------------- */
+function AuthConfirmScreen({ tokenHash, type, onSuccess, onBackToLogin }) {
+  const [status, setStatus] = useState("working"); // working | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const user = await db.verifyEmailTokenHash(tokenHash, type);
+        onSuccess(user);
+      } catch (e) {
+        const raw = e && typeof e.message === "string" ? e.message : "";
+        const expired = /expir|invalid|not found/i.test(raw);
+        setErrorMsg(
+          expired
+            ? "This sign-in link has expired or was already used. Request a new one below."
+            : (raw || "Something went wrong verifying your link. Please request a new one.")
+        );
+        setStatus("error");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "#FFFFFF", zIndex: 99,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center",
+    }}>
+      <style>{"@keyframes ahSpin { to { transform: rotate(360deg); } }"}</style>
+      <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 160, marginBottom: 28 }} />
+      {status === "working" ? (
+        <>
+          <div style={{
+            width: 30, height: 30, borderRadius: "50%", border: "3px solid #E3E7EE", borderTopColor: "#1E3A6D",
+            animation: "ahSpin 0.8s linear infinite", marginBottom: 16,
+          }} />
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 17, color: "#1B2430" }}>Signing you in...</div>
+        </>
+      ) : (
+        <>
+          <div style={{
+            width: 52, height: 52, borderRadius: "50%", background: "#F5DED8",
+            display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16,
+          }}>
+            <X size={24} color="#A8452F" />
+          </div>
+          <div style={{ fontFamily: "'Fraunces', serif", fontSize: 18, fontWeight: 500, color: "#1B2430", marginBottom: 8 }}>Link expired</div>
+          <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, color: "#64707E", lineHeight: 1.6, maxWidth: 300, marginBottom: 22 }}>
+            {errorMsg}
+          </p>
+          <button onClick={onBackToLogin} style={{
+            padding: "13px 26px", borderRadius: 12, background: "#1E3A6D", color: "#fff", border: "none",
+            fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: 14, cursor: "pointer",
+          }}>
+            Back to sign in
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OtpLogin({ onLogin, initialError = "" }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
 
   const isValidEmail = (val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
@@ -6948,8 +7016,50 @@ export default function AmazingHearingApp() {
     window.location.reload();
   };
 
+  // Our own sign-in link lands back here as
+  // myamazinghearing.com/?token_hash=...&type=... -- verify it client-side
+  // instead of relying on Supabase's raw-domain redirect.
+  const [authConfirm] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get("token_hash");
+    return tokenHash ? { tokenHash, type: params.get("type") || "email" } : null;
+  });
+  const [authConfirmDone, setAuthConfirmDone] = useState(false);
+  const clearAuthConfirmParams = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("token_hash");
+    url.searchParams.delete("type");
+    window.history.replaceState({}, "", url.toString());
+  };
+  const handleAuthConfirmSuccess = async (user) => {
+    clearAuthConfirmParams();
+    setAuthConfirmDone(true);
+    await enterAsUser(user);
+  };
+  const handleAuthConfirmBack = () => {
+    clearAuthConfirmParams();
+    setAuthConfirmDone(true);
+    setPhase("login");
+  };
+
+  // Fallback for links sent before this fix (or any old-style Supabase
+  // redirect that still comes back with #error=...) so people get a clear
+  // message instead of silently landing back on the welcome screen.
+  const [hashAuthError] = useState(() => {
+    if (!window.location.hash) return "";
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const desc = params.get("error_description") || params.get("error");
+    if (!desc) return "";
+    window.history.replaceState({}, "", window.location.pathname + window.location.search);
+    return "This sign-in link has expired or was already used. Please request a new one.";
+  });
+
   if (checkoutStatus === "success" || checkoutStatus === "cancel") {
     return <PaymentReturnScreen status={checkoutStatus} onContinue={clearCheckoutParam} />;
+  }
+
+  if (authConfirm && !authConfirmDone) {
+    return <AuthConfirmScreen tokenHash={authConfirm.tokenHash} type={authConfirm.type} onSuccess={handleAuthConfirmSuccess} onBackToLogin={handleAuthConfirmBack} />;
   }
 
   if (phase === "splash") {
@@ -6963,7 +7073,7 @@ export default function AmazingHearingApp() {
   if (phase === "login") {
     return (
       <div style={{ minHeight: "100dvh", background: "#E8EAEF", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <OtpLogin onLogin={handleLogin} />
+        <OtpLogin onLogin={handleLogin} initialError={hashAuthError} />
         <button
           onClick={() => setPinGateOpen(true)}
           style={{

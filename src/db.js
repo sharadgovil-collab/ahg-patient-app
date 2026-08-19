@@ -30,6 +30,20 @@ export async function verifyEmailOtp(email, token) {
   return data.user;
 }
 
+// Completes sign-in from our own /?token_hash=...&type=... links (see
+// AuthConfirmScreen in App.jsx). Verifying client-side, on our own domain,
+// means the token is only ever consumed by a real browser tab the person
+// actually opened -- not by a mail app's link-scanner, and not blocked by
+// Safari/other browsers flagging an unfamiliar raw Supabase link.
+export async function verifyEmailTokenHash(tokenHash, type) {
+  const { data, error } = await supabase.auth.verifyOtp({
+    token_hash: tokenHash,
+    type: type || "email",
+  });
+  if (error) throw error;
+  return data.user;
+}
+
 export async function getCurrentUser() {
   const { data } = await supabase.auth.getUser();
   return data?.user || null;
