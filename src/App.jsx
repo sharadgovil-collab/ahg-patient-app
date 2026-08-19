@@ -4884,11 +4884,18 @@ function OtpLogin({ onLogin }) {
 
       <img src={LOGO_SRC} alt="Amazing Hearing" style={{ width: 190, animation: "splashIn 0.6s ease-out 0.08s backwards" }} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 24px", animation: "splashIn 0.6s ease-out 0.16s backwards" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "20px 0 16px", animation: "splashIn 0.6s ease-out 0.16s backwards" }}>
         <div style={{ width: 36, height: 2, background: "#E8631E" }} />
         <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#E8631E" }} />
         <div style={{ width: 36, height: 2, background: "#1E3A6D" }} />
       </div>
+
+      <p style={{
+        textAlign: "center", fontFamily: "'Inter', sans-serif", fontSize: 12.5, color: "#64707E",
+        maxWidth: 300, lineHeight: 1.6, margin: "0 0 24px", animation: "splashIn 0.6s ease-out 0.2s backwards",
+      }}>
+        Our My Amazing Hearing app lets you register, complete your questionnaire, and keep everything about your devices in one place.
+      </p>
 
       <div style={{ width: "100%", maxWidth: 340, animation: "splashIn 0.6s ease-out 0.24s backwards" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, justifyContent: "center" }}>
